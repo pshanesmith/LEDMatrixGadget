@@ -1,4 +1,4 @@
-# Hardware checklist (Phase 2)
+# Hardware checklist
 
 Sources: the Adafruit RGB Matrix Bonnet guide and the hzeller `rpi-rgb-led-matrix` README.
 

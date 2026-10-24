@@ -7,7 +7,7 @@ from .base import Display
 class HardwareDisplay(Display):
     """hzeller rgbmatrix backend. Needs the bindings from setup/02-matrix-setup.sh.
 
-    Untested until Phase 2/6 (requires the panel).
+    Verified on the real panel with tools/test-matrix.sh and the running service.
     """
 
     def __init__(self, cfg: DisplayConfig):

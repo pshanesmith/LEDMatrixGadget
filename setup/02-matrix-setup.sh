@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 2: install the hzeller rpi-rgb-led-matrix library and Python bindings, free the
+# Install the hzeller rpi-rgb-led-matrix library and Python bindings, free the
 # hardware from the sound driver, and reserve a CPU core for the panel refresh.
 # Automates https://learn.adafruit.com/adafruit-rgb-matrix-bonnet-for-raspberry-pi/install-manually
 # (updated for the library's 2026 CMake/pip build and for Debian 13).

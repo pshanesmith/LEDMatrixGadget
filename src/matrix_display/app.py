@@ -1,5 +1,5 @@
-"""Frame composition. Regions are drawn by pluggable callables so phases 3 and 4
-can each own their part without editing this file."""
+"""Frame composition. Regions are drawn by pluggable callables, so the scene and each
+widget own their drawing without editing this file."""
 from collections.abc import Callable
 
 from PIL import Image, ImageDraw

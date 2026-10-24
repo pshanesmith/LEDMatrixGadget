@@ -1,4 +1,4 @@
-"""Pure forecast helpers shared by the scene (Phase 3) and the widgets (Phase 4)."""
+"""Pure forecast helpers shared by the scene and the widgets."""
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 

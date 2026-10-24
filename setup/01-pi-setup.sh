@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 1: slim down the Pi, cut power use, update, and install build dependencies.
+# Slim down the Pi, cut power use, update, and install build dependencies.
 #
 #   ./setup/01-pi-setup.sh                 dry run (default): shows everything, changes nothing
 #   sudo ./setup/01-pi-setup.sh --apply    do it (asks you to type 'yes' first)
@@ -58,7 +58,7 @@ PURGE_AGGRESSIVE=(
 )
 # apt must never remove any of these (or anything matching), or the run aborts.
 PROTECT_RE='^(openssh-.*|ssh|network-manager|wpasupplicant|firmware-brcm80211|raspi-firmware|raspi-config|raspi-utils|raspberrypi-.*|userconf-pi|avahi-daemon|sudo|systemd.*|libsystemd.*|dbus.*|udev|libc6|apt|dpkg|bash|coreutils|login|passwd|initramfs-tools|linux-image-rpi-v8|linux-image-[0-9].*-rpi-v8|python3|python3-minimal|python3-venv|python3-pip|python3-dev|python3-setuptools|python3-gpiozero|python3-rpi-lgpio|python3-libgpiod|python3-spidev|python3-smbus2|build-essential|gcc|gcc-[0-9]+|gcc-[0-9]+-aarch64-linux-gnu|g\+\+|g\+\+-[0-9]+|cpp|libc6-dev|make|git|curl|ca-certificates|cron|iproute2|iputils-ping|nftables|rsync|dhcpcd-base|base-files|netbase|init|kmod|sed|grep|tar|gzip|libnss-.*|libpam.*)$'
-DEPS=(git python3-dev python3-venv python3-pil cython3 python3-setuptools)   # python3-pil: needed by Phase 2 (see 02-matrix-setup.sh)
+DEPS=(git python3-dev python3-venv python3-pil cython3 python3-setuptools)   # python3-pil: needed by the panel bindings (see 02-matrix-setup.sh)
 
 # Lines in config.txt that conflict with the power block below get commented out.
 BOOT_BLOCK='dtoverlay=disable-bt
@@ -158,7 +158,7 @@ step_update() {
 step_verify() {
   step "Verification"
   local n; n=$(dpkg -l | grep -c '^ii')
-  echo "  installed packages: $n (was 633 before Phase 1)"
+  echo "  installed packages: $n (633 on the stock image)"
   echo "  disk free on /: $(df -h --output=avail / | tail -1 | tr -d ' ')"
   echo "  bluetooth service: $(systemctl is-enabled bluetooth.service 2>&1 | head -1)"
   echo "  config.txt power block: $(grep -c 'matrix-setup:power' "$BOOT_DIR/config.txt" 2>/dev/null || true) markers"

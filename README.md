@@ -2,7 +2,7 @@
 
 A 64x64 RGB LED matrix (Raspberry Pi Zero 2 W + Adafruit RGB Matrix Bonnet) showing the date,
 an animated weather scene, and Home Assistant status. See [DESIGN.md](DESIGN.md) for the design
-and [PLAN.md](PLAN.md) for the phases.
+and [docs/operations.md](docs/operations.md) for day-to-day operation.
 
 ## Development setup (no panel needed)
 
@@ -35,7 +35,7 @@ python3 tools/ha-discover.py --all-lights --all-doors
 `display/` (emulator and hardware backends), `app.py` (Compositor; phases register region
 drawers), `samples.py` (named test states). `tools/`: `ha-discover.py`, `preview.py`.
 
-## Running as a service (Phase 6)
+## Running as a service
 
 The service runs a copy of this repository deployed from GitHub to `/opt/matrix`, not your working checkout.
 

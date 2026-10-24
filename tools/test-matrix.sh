@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 2 hardware test, after Adafruit's "Testing Install" page, adapted to a 64x64 panel.
+# Hardware test, after Adafruit's "Testing Install" page, adapted to a 64x64 panel.
 #   sudo ./tools/test-matrix.sh            guided test (asks what you see)
 #   sudo ./tools/test-matrix.sh --quick    one demo + the Python smoke test, no questions
 # Override settings with environment variables, e.g.  SLOWDOWN=3 MAPPING=adafruit-hat ./tools/test-matrix.sh

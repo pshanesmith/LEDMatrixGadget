@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 6: deploy the display from GitHub into /opt/matrix and run it as a systemd service.
+# Deploy the display from GitHub into /opt/matrix and run it as a systemd service.
 #
 #   ./setup/03-install-service.sh                 dry run (default)
 #   sudo ./setup/03-install-service.sh --apply    deploy, install, enable and start

@@ -1,5 +1,5 @@
 {
- "_comment": "Hand-built sample in Open-Meteo response shape (example location); replace with a recorded response in Phase 3.",
+ "_comment": "Hand-built sample in Open-Meteo response shape (example location); the recorded response is weather_open_meteo_recorded.json.",
  "latitude": 40.75,
  "longitude": -74.0,
  "utc_offset_seconds": -14400,
