@@ -53,8 +53,8 @@ main() {
 
   if (( UNINSTALL )); then
     step "Uninstall"
-    run systemctl disable --now matrix-display.service
-    run rm -f "$UNIT"
+    run systemctl disable --now matrix-health.timer matrix-display.service
+    run rm -f "$UNIT" /etc/systemd/system/matrix-health.service /etc/systemd/system/matrix-health.timer
     run systemctl daemon-reload
     info "removed the service; $DEPLOY, $ETC and $STATE were kept"
     return 0
@@ -128,6 +128,13 @@ main() {
       || die "the deployed environment cannot import the app or the panel bindings"
   fi
 
+  # tools/health-check.sh compares this with the installed Pillow (the panel bindings depend on its layout).
+  if (( ! DRY_RUN )) && [[ ! -f /var/lib/matrix-display/pillow-version ]]; then
+    install -d -m 755 /var/lib/matrix-display
+    dpkg-query -W -f='${Version}\n' python3-pil > /var/lib/matrix-display/pillow-version
+    echo "  recorded the Pillow version of this build: $(cat /var/lib/matrix-display/pillow-version)"
+  fi
+
   step "Preflight"
   if lsmod | grep -q '^snd_bcm2835'; then die "snd_bcm2835 is loaded; finish setup/02-matrix-setup.sh and reboot first"; fi
   local avail; avail=$(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo)
@@ -168,9 +175,13 @@ main() {
   local unit
   unit=$(sed -e "s#@REPO@#$DEPLOY#g" -e "s#@PYTHON@#$PY#g" -e "s#@DROP_ENV@#$DROP_ENV#g" "$SELF_REPO/systemd/matrix-display.service")
   write_file "$UNIT" "$unit"
+  write_file /etc/systemd/system/matrix-health.service \
+    "$(sed -e "s#@REPO@#$DEPLOY#g" "$SELF_REPO/systemd/matrix-health.service")"
+  write_file /etc/systemd/system/matrix-health.timer "$(cat "$SELF_REPO/systemd/matrix-health.timer")"
   confirm "This deploys the code from GitHub to $DEPLOY and installs a service that drives the LED panel."
   run systemctl daemon-reload
   run systemctl enable matrix-display.service
+  run systemctl enable --now matrix-health.timer
   if (( START )); then run systemctl restart matrix-display.service; fi
 
   if (( ! DRY_RUN && START )); then

@@ -11,6 +11,7 @@
 #          --venv PATH   virtualenv that receives the bindings (default: <repo>/.venv)
 #          --src PATH    where the library is cloned (default: <repo>/vendor/rpi-rgb-led-matrix)
 #          --no-isolcpus keep all four cores for the OS
+#          --rebuild     rebuild and reinstall the Python bindings (needed after a python3-pil upgrade)
 # Steps:   deps library python boot verify
 # Never reboots. Safe to run repeatedly.
 set -euo pipefail
@@ -26,7 +27,9 @@ RGBMATRIX_REPO=${RGBMATRIX_REPO:-https://github.com/hzeller/rpi-rgb-led-matrix}
 RGBMATRIX_REF=${RGBMATRIX_REF:-14464b3ad8974665f75a3c82355cf872311fec21}
 SRC=${SRC:-$REPO/vendor/rpi-rgb-led-matrix}
 VENV=${VENV:-$REPO/.venv}
-ISOLCPUS=1; ASSUME_YES=0; ONLY=""; SKIP=""
+ISOLCPUS=1; REBUILD=0; ASSUME_YES=0; ONLY=""; SKIP=""
+# Records which Pillow the bindings were built against; tools/health-check.sh compares it to the installed one.
+PILLOW_STAMP=${PILLOW_STAMP:-/var/lib/matrix-display/pillow-version}
 ALL_STEPS=(deps library python boot verify)
 # python3-pil matters twice: it ships Pillow's private Imaging.h (the bindings' C shim reads Pillow's
 # in-memory image struct), and the bindings must run against the SAME Pillow those headers came from.
@@ -43,6 +46,7 @@ while (( $# )); do
     --venv) VENV=$2; shift ;;
     --src) SRC=$2; shift ;;
     --no-isolcpus) ISOLCPUS=0 ;;
+    --rebuild) REBUILD=1 ;;
     -h|--help) sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "unknown option: $1 (try --help)" ;;
   esac
@@ -109,12 +113,19 @@ step_python() {
   if compgen -G "$VENV/lib/python3*/site-packages/PIL" >/dev/null; then
     run as_owner "$VENV/bin/pip" uninstall -y pillow
   fi
-  if [[ -x $VENV/bin/python ]] && "$VENV/bin/python" -c 'import rgbmatrix' 2>/dev/null; then
-    echo "  rgbmatrix already importable"
-    return 0
+  if (( ! REBUILD )) && [[ -x $VENV/bin/python ]] && "$VENV/bin/python" -c 'import rgbmatrix' 2>/dev/null; then
+    echo "  rgbmatrix already importable (use --rebuild to compile it again)"
+  else
+    # Building compiles C++ on a Zero 2 W: expect 10+ minutes. A single job avoids exhausting RAM.
+    local extra=()
+    if (( REBUILD )); then extra=(--force-reinstall --no-deps); fi
+    run as_owner nice -n 10 env CMAKE_BUILD_PARALLEL_LEVEL=1 "$VENV/bin/pip" install "${extra[@]}" "$SRC"
+    if (( ! DRY_RUN )); then
+      mkdir -p "$(dirname "$PILLOW_STAMP")"
+      dpkg-query -W -f='${Version}\n' python3-pil > "$PILLOW_STAMP"
+      echo "  recorded the Pillow version the bindings were built against: $(cat "$PILLOW_STAMP")"
+    fi
   fi
-  # Building compiles C++ on a Zero 2 W: expect 10+ minutes. A single job avoids exhausting RAM.
-  run as_owner nice -n 10 env CMAKE_BUILD_PARALLEL_LEVEL=1 "$VENV/bin/pip" install "$SRC"
 }
 
 step_boot() {

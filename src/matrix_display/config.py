@@ -30,6 +30,7 @@ class DisplayConfig:
     brightness: int = 50
     max_brightness: int = 70
     scene_fps: int = 15
+    safe_image_copy: bool = True   # push frames through Pillow's public API (about 8 ms/frame) instead of reading its internals
     drop_privileges: bool = True   # rgbmatrix drops root after GPIO setup; env MATRIX_DROP_PRIVILEGES=0 disables
 
 

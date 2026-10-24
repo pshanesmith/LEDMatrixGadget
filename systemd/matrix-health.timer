@@ -1,0 +1,11 @@
+[Unit]
+Description=Check the LED matrix display after boot and once a day
+
+[Timer]
+# Ten minutes after boot (so after an automatic update and reboot) and every morning at 08:00.
+OnBootSec=10min
+OnCalendar=*-*-* 08:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

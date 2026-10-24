@@ -25,6 +25,7 @@ rgb_sequence = "RGB"
 brightness = 50          # percent; 4 A supply, keep modest
 max_brightness = 70      # hard ceiling; brightness is clamped to this
 scene_fps = 15
+safe_image_copy = true  # frames go through Pillow's public API; a Pillow upgrade can then never corrupt the picture
 drop_privileges = true   # the service sets MATRIX_DROP_PRIVILEGES=0 if the unprivileged user cannot read the code
 
 [weather]

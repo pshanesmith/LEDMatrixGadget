@@ -5,9 +5,10 @@
 #   sudo ./setup/01-pi-setup.sh --apply    do it (asks you to type 'yes' first)
 #
 # Options:  --aggressive   also remove cloud-init, Raspberry Pi Connect, USB gadget mode
+#           --no-auto-updates   do not set up unattended OS upgrades
 #           --yes          skip the confirmation prompt
 #           --only a,b     run only these steps   --skip a,b   skip these steps
-# Steps:    purge boot system update verify
+# Steps:    purge boot system update autoupdate verify
 # Never reboots; reboot yourself afterwards. Safe to run repeatedly.
 set -euo pipefail
 
@@ -17,14 +18,15 @@ source "$HERE/lib/common.sh"
 
 BOOT_DIR=${BOOT_DIR:-/boot/firmware}
 HA_URL=${MATRIX_HA_URL:-http://homeassistant:8123}
-ALL_STEPS=(purge boot system update verify)
-AGGRESSIVE=0; ASSUME_YES=0; ONLY=""; SKIP=""
+ALL_STEPS=(purge boot system update autoupdate verify)
+AGGRESSIVE=0; ASSUME_YES=0; AUTO_UPDATES=1; ONLY=""; SKIP=""
 
 while (( $# )); do
   case $1 in
     --apply) DRY_RUN=0 ;;
     --aggressive) AGGRESSIVE=1 ;;
     --yes) ASSUME_YES=1 ;;
+    --no-auto-updates) AUTO_UPDATES=0 ;;
     --only) ONLY=$2; shift ;;
     --skip) SKIP=$2; shift ;;
     -h|--help) sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -153,6 +155,62 @@ step_update() {
   run apt-get -y -o Dpkg::Options::=--force-confold full-upgrade
   run apt-get -y install "${DEPS[@]}"
   run apt-get clean
+}
+
+step_autoupdate() {
+  step "Automatic OS updates (unattended-upgrades)"
+  if (( ! AUTO_UPDATES )); then echo "  skipped (--no-auto-updates)"; return 0; fi
+
+  if ! installed unattended-upgrades; then
+    run env DEBIAN_FRONTEND=noninteractive apt-get -y install unattended-upgrades
+  else
+    echo "  unattended-upgrades already installed"
+  fi
+
+  # Which repositories may upgrade themselves: Debian stable, its security and stable-updates suites, and the
+  # Raspberry Pi repository (kernel, firmware, raspi tools). Never a new Debian release. The '#clear' line
+  # replaces the stock list instead of adding to it.
+  write_file /etc/apt/apt.conf.d/52matrix-unattended-upgrades '// Managed by setup/01-pi-setup.sh
+#clear Unattended-Upgrade::Origins-Pattern;
+Unattended-Upgrade::Origins-Pattern {
+    "origin=Debian,codename=${distro_codename},label=Debian";
+    "origin=Debian,codename=${distro_codename}-security,label=Debian-Security";
+    "origin=Debian,codename=${distro_codename}-updates,label=Debian";
+    "origin=Raspberry Pi Foundation,codename=${distro_codename},label=Raspberry Pi Foundation";
+};
+
+// Keep our edited config files; clean up after upgrades.
+Dpkg::Options { "--force-confdef"; "--force-confold"; };
+Unattended-Upgrade::MinimalSteps "true";
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+Unattended-Upgrade::Remove-New-Unused-Dependencies "true";
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+Unattended-Upgrade::SyslogEnable "true";
+
+// A kernel or firmware update needs a reboot: do it at 04:00, but never while someone is logged in
+// (an open SSH session postpones it to the next night). The display is dark for about a minute.
+Unattended-Upgrade::Automatic-Reboot "true";
+Unattended-Upgrade::Automatic-Reboot-WithUsers "false";
+Unattended-Upgrade::Automatic-Reboot-Time "04:00";'
+
+  # Without these, the daily apt timers do nothing at all.
+  write_file /etc/apt/apt.conf.d/20auto-upgrades 'APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::AutocleanInterval "7";'
+
+  # Upgrade at about 03:00 so the 04:00 reboot window follows it (the default is 06:00 plus up to an hour).
+  write_file /etc/systemd/system/apt-daily-upgrade.timer.d/matrix.conf '[Timer]
+OnCalendar=
+OnCalendar=*-*-* 03:00
+RandomizedDelaySec=20m'
+  run systemctl daemon-reload
+  run systemctl enable --now apt-daily.timer apt-daily-upgrade.timer
+
+
+  if (( ! DRY_RUN )); then
+    echo "  checking the configuration:"
+    unattended-upgrade --dry-run -d 2>&1 | grep -E 'Allowed origins|Packages that will be upgraded|No packages found|ERROR' | sed 's/^/    /' | cut -c1-200 || true
+  fi
 }
 
 step_verify() {

@@ -34,11 +34,14 @@ class HardwareDisplay(Display):
         o.drop_privileges = cfg.drop_privileges
         self.width = cfg.cols * cfg.chain_length
         self.height = cfg.rows * cfg.parallel
+        # The bindings' fast path reads Pillow's private image struct, which can change between Pillow versions
+        # (and an automatic upgrade would then draw garbage). The safe path uses only Pillow's public API.
+        self._unsafe = not cfg.safe_image_copy
         self._matrix = RGBMatrix(options=o)
         self._canvas = self._matrix.CreateFrameCanvas()
 
     def show(self, image: Image.Image) -> None:
-        self._canvas.SetImage(self._check(image))
+        self._canvas.SetImage(self._check(image), 0, 0, unsafe=self._unsafe)
         self._canvas = self._matrix.SwapOnVSync(self._canvas)
 
     def set_brightness(self, percent: int) -> None:

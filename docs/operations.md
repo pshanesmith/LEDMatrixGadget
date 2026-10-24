@@ -52,8 +52,22 @@ The Pi has about 460 MB of RAM. The display itself needs about 35 MB. Claude Cod
 ## Updating
 `sudo apt update && sudo apt full-upgrade`, then reboot. After a kernel update confirm `isolcpus` and the sound blacklist still apply (`./setup/02-matrix-setup.sh --only verify`). No unattended upgrades are installed by design.
 
-## After a Pillow upgrade
-The panel bindings were compiled against Debian's `python3-pil` and read Pillow's internal memory layout. If `apt` upgrades `python3-pil`, rebuild: `sudo ./setup/02-matrix-setup.sh --apply` (the pip install step recompiles), restart the service, and check the picture before leaving it.
+## Automatic updates
+The Pi upgrades itself nightly (`unattended-upgrades`): Debian security and stable updates plus the Raspberry Pi repository, run at about 03:00. If a kernel or firmware update needs a reboot it happens at **04:00 and only when nobody is logged in**, so an open SSH session postpones it a night; the display is dark for about a minute. Application code is not updated this way: use `sudo /opt/matrix/setup/03-install-service.sh --apply`.
+
+| Task | Command |
+|---|---|
+| What did the last automatic run do? | `sudo tail -40 /var/log/unattended-upgrades/unattended-upgrades.log` |
+| Preview what would be upgraded | `sudo unattended-upgrade --dry-run -d` |
+| Is a reboot pending? | `ls /var/run/reboot-required` |
+| Did the display come back healthy? | `journalctl -t matrix-health -n 5` or run `./tools/health-check.sh` |
+| Turn automatic updates off | `sudo systemctl disable --now apt-daily-upgrade.timer` (re-enable with `enable --now`) |
+| Hold a package back | `sudo apt-mark hold PACKAGE` (undo: `unhold`); nothing is held by default |
+
+The health check runs ten minutes after every boot and daily at 08:00; a failure shows in `systemctl --failed` and the journal.
+
+## Pillow upgrades
+Pillow upgrades with the rest of the system. The panel bindings' fast image path reads Pillow's internal memory layout, so frames are pushed through Pillow's public API instead (`[display] safe_image_copy = true`, the default), which a Pillow upgrade cannot break. It costs about 8 ms a frame; check the `render avg` figure in `journalctl -u matrix-display` after a change. If you ever set `safe_image_copy = false`, rebuild the bindings after any Pillow upgrade: `sudo ./setup/02-matrix-setup.sh --apply --rebuild` (10+ minutes; close Claude Code first).
 
 ## Backups
 `sudo cp -a /etc/matrix ~/matrix-etc-backup` (contains the token; keep it private). The repository holds everything else; `config/config.toml`, `secrets.env`, `vendor/` and `.venv/` are gitignored, and `.githooks/pre-commit` blocks commits that contain a token (enable with `git config core.hooksPath .githooks`, already set).

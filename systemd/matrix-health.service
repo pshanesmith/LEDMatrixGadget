@@ -1,0 +1,10 @@
+# Installed by setup/03-install-service.sh (@REPO@ is filled in there).
+[Unit]
+Description=LED matrix display health check
+Documentation=file://@REPO@/docs/operations.md
+After=matrix-display.service
+
+[Service]
+Type=oneshot
+# Exit status 1 marks this unit failed, so 'systemctl --failed' and the journal (tag matrix-health) show it.
+ExecStart=@REPO@/tools/health-check.sh
