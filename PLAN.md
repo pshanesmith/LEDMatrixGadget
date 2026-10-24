@@ -200,6 +200,10 @@ Phase 6 live result (2026-10-24, 11 min after install): service active and enabl
 
 Panel confirmed by the user (photo and in-person look): all regions correct, live data, night sky dark with mountains visible. Done: moon icon for clear nights (steady and next-change), `tools/soak-report.sh`, `docs/operations.md`, git repository initialised (no commit made) with `.gitignore` and the pre-commit guard verified (blocks a fake token and `secrets.env`; the real token appears in no tracked file, the journal or the caches). Remaining: a reboot test (service must come up by itself), the 24-48 h soak checked with `tools/soak-report.sh`, and the user's sign-off.
 
-## Deployment from GitHub (in progress)
+## Deployment from GitHub (done)
 
 Request: stop running from the home folder; commit to the user's GitHub as `LEDMatrixGadget` and install from there. Done: installer reworked (`setup/03-install-service.sh` deploys a clone to `/opt/matrix`, deploy-key support for a private repo), docs updated, privacy scan of the files to be committed (no token or e-mail; the files originally contained the owner's ZIP/coordinates, entity names, home path and an e-mail address in a User-Agent; these were replaced by neutral examples (ZIP 10001, New York) because the repository is **public**). Waiting on: GitHub username and authentication from the Pi (no `gh`, no SSH key, no git identity yet), then the first commit and push, then the first deployment on the Pi.
+
+Published 2026-10-24: https://github.com/pshanesmith/LEDMatrixGadget (public, branch `main`, one commit, authored with the GitHub noreply address; the public copy was checked for the e-mail and secrets). Next: the first deployment on the Pi with `sudo ./setup/03-install-service.sh --apply` (clones to `/opt/matrix`, reuses the existing panel build, restarts the service with the privilege drop on), then the 24-48 h soak.
+
+First deployment done 2026-10-24 03:31: service active from `/opt/matrix` (clone of the public repository), running as `daemon` (privilege drop works), refresh thread real-time on core 3, weather and Home Assistant caches written by the unprivileged process, no warnings. Soak restarts from here; the earlier service ran about 1 h 2 min cleanly before the switch.

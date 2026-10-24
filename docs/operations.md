@@ -4,6 +4,8 @@ Everyday commands (the service is `matrix-display`).
 
 **Where things live:** the code runs from `/opt/matrix`, a clone of the GitHub repository (with its own `.venv/` and `vendor/` inside); config and the token are in `/etc/matrix`; the weather and Home Assistant cache is in `/var/lib/matrix-display`. Your checkout in your home folder is for development only.
 
+**Inspecting the deployment:** `/opt/matrix` is root-owned, so use `sudo git -C /opt/matrix log --oneline` (without sudo git reports "dubious ownership").
+
 **Update from GitHub:** push your changes, then on the Pi run `sudo /opt/matrix/setup/03-install-service.sh --apply` (pulls the latest `main`, reinstalls, restarts). `--ref v1.0` deploys a tag; `--repo URL` changes the source.
 
 | Task | Command |
