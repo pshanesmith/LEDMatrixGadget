@@ -1,0 +1,40 @@
+# Copy to config/config.toml (gitignored). Secrets (HA token) go in secrets.env, never here.
+
+[location]
+# Filled in by tools/geocode.py <ZIP>, or enter coordinates by hand.
+postal_code = "00000"
+latitude = 0.0
+longitude = 0.0
+label = ""
+units = "fahrenheit"
+
+[display]
+# 64x64 panel: rows = cols = 64 (hzeller counts the panel's full height).
+rows = 64
+cols = 64
+chain_length = 1
+parallel = 1
+hardware_mapping = "adafruit-hat-pwm"   # "adafruit-hat" if the PWM bridge is not made
+gpio_slowdown = 2        # verified on the panel 2026-10-24: clean picture, ~108 Hz refresh
+pwm_bits = 11
+pwm_lsb_nanoseconds = 130
+limit_refresh_hz = 0     # e.g. 150 to hold a steady refresh rate (see docs/operations.md, Flicker)
+row_address_type = 0
+multiplexing = 0
+rgb_sequence = "RGB"
+brightness = 50          # percent; 4 A supply, keep modest
+max_brightness = 70      # hard ceiling; brightness is clamped to this
+scene_fps = 15
+drop_privileges = true   # the service sets MATRIX_DROP_PRIVILEGES=0 if the unprivileged user cannot read the code
+
+[weather]
+refresh_seconds = 900
+
+[homeassistant]
+# Overridden by MATRIX_HA_URL. The token comes only from MATRIX_HA_TOKEN (secrets.env).
+url = "http://homeassistant:8123"
+poll_seconds = 15
+gates = []
+exclude_locks = []
+# fnmatch globs on entity ids
+exclude_lights = ["light.*_rgb_indicator", "light.*_ap_led", "light.*_led"]

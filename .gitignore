@@ -1,0 +1,33 @@
+# Secrets: never commit. Only the *.example files are tracked.
+secrets.env
+*.env
+!*.env.example
+.env
+*.token
+
+# Local, per-install configuration (location, HA URL, entity choices)
+config/config.toml
+config.toml
+!config.example.toml
+!config/config.example.toml
+
+# Runtime state and caches
+state-cache.json
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+build/
+*.egg-info/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Third-party library cloned by setup/02-matrix-setup.sh
+vendor/

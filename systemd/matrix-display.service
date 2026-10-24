@@ -1,0 +1,39 @@
+# Installed by setup/03-install-service.sh (placeholders in @...@ are filled in there).
+[Unit]
+Description=LED matrix home status display
+Documentation=file://@REPO@/DESIGN.md
+After=network.target
+
+[Service]
+Type=notify
+NotifyAccess=main
+# Secrets (MATRIX_HA_TOKEN) come only from this file; it is root-only (0600).
+EnvironmentFile=-/etc/matrix/secrets.env
+Environment=MATRIX_STATE_DIR=/var/lib/matrix-display
+Environment=PYTHONUNBUFFERED=1
+@DROP_ENV@
+WorkingDirectory=/var/lib/matrix-display
+ExecStart=@PYTHON@ -m matrix_display --config /etc/matrix/config.toml
+ExecReload=/bin/kill -HUP $MAINPID
+
+# The panel needs root for GPIO timing; the library then drops to an unprivileged user.
+Restart=always
+RestartSec=5
+# The app pings systemd about once a second; if the render loop hangs for 30 s it is restarted.
+WatchdogSec=30
+TimeoutStopSec=15
+
+# ~460 MB RAM: protect the display from the OOM killer, and keep logs modest.
+OOMScoreAdjust=-500
+LogRateLimitIntervalSec=30
+LogRateLimitBurst=200
+
+# Light hardening that does not interfere with /dev/mem GPIO access.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=full
+ReadWritePaths=/var/lib/matrix-display
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,5 @@
+{"locks": [["lock.front_door", "unlocked"], ["lock.garage_door", "jammed"], ["lock.side_door", "unlocking"],
+           ["lock.cellar_door", "unavailable"], ["lock.old_door", "unknown"], ["lock.guest_door", "unlocked"]],
+ "lights": ["light.kitchen", "light.hall", "light.hall_rgb_indicator", "light.switch_ap_led",
+            "light.usw_pro_led", "light.den"],
+ "gates": ["on", "off", "unavailable"]}

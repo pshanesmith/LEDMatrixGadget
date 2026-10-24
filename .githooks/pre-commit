@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Blocks commits that contain a Home Assistant long-lived token (a JWT) or a
+# secrets file. Enable with:  git config core.hooksPath .githooks
+set -u
+bad=0
+for f in $(git diff --cached --name-only --diff-filter=ACM); do
+  case "$f" in
+    *.env.example) ;;
+    secrets.env|*.env|.env|*.token)
+      echo "pre-commit: refusing to commit secrets file: $f" >&2; bad=1; continue ;;
+  esac
+  if git show ":$f" | grep -Eq 'eyJ[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{10,}'; then
+    echo "pre-commit: $f contains what looks like a JWT / HA access token" >&2; bad=1
+  fi
+done
+exit $bad

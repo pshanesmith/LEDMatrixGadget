@@ -1,0 +1,9 @@
+{
+ "locks_unlocked": 0,
+ "locks_unavailable": 1,
+ "lights_on": 8,
+ "gates": [
+  "off",
+  "off"
+ ]
+}
