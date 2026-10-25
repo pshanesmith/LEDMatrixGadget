@@ -223,6 +223,8 @@ def terrain(eq: int, cond: Condition | None, season: int,
             col = tip if snowing and r < 2 else pine
             draw.line([(x - half, y), (x + half, y)], fill=col + (255,))
         draw.point([(x, base + 1)], fill=scale(pine, 0.7) + (255,))
+    dull = tone(n, _TREES["brown"], 0.95)
+    mute = clamp(leaf_loss / 0.85) * 0.85
     for k, (bx, cw, ch, cb, v) in enumerate(_BIG_TREES):       # foreground trees, drawn last
         leaves, branches = _big_tree(cw, ch, 100 + k, v)
         ox, oy = bx - cw // 2, cb - ch
@@ -235,7 +237,7 @@ def terrain(eq: int, cond: Condition | None, season: int,
         for (dx, dy), (c, pick) in leaves.items():
             if ((dx * 73856093 ^ dy * 19349663 ^ k * 83492791) % 100) / 100 < leaf_loss:
                 continue                                        # bare branches show through
-            leaf = tone(n, _foliage(pick, leaves_pal), 0.95)
+            leaf = lerp(tone(n, _foliage(pick, leaves_pal), 0.95), dull, mute)   # late leaves fade to brown
             shade = {"h": 1.4, "m": 1.0, "d": 0.6, "x": 0.4, "s": 1.14}[c]
             draw.point([(ox + dx, oy + dy)], fill=scale(leaf, shade) + (255,))
     return img.convert("RGB"), img.getchannel("A")
