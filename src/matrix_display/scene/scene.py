@@ -17,9 +17,10 @@ def render_state(state: AppState, t: float) -> Image.Image:
     weather = state.weather
     if weather is None:
         img = sky.sky_image(_NEUTRAL_EQ, None).copy()
-        rgb, mask = mountains.terrain(_NEUTRAL_EQ, None)
+        rgb, mask = mountains.terrain(_NEUTRAL_EQ, None, _season(state))
         img.paste(rgb, (0, 0), mask)
         _paste_text(img, "?")
+        _paste_date(img, state)
         return img
 
     cur, cond = weather.current, weather.current.condition
@@ -47,7 +48,7 @@ def render_state(state: AppState, t: float) -> Image.Image:
     if cond in _PRECIP_SKY and cond is not Condition.FOG:
         clouds.draw_layers(img, eq, cond, cur.wind_speed, t)
 
-    rgb, mask = mountains.terrain(eq, cond)
+    rgb, mask = mountains.terrain(eq, cond, _season(state))
     img.paste(rgb, (0, 0), mask)
 
     if cond is Condition.FOG:
@@ -61,14 +62,29 @@ def render_state(state: AppState, t: float) -> Image.Image:
         particles.draw_snow(img, particles.snow_intensity(cur.code), cur.wind_speed, t)
 
     _paste_text(img, digits.format_temperature(cur.temperature))
+    _paste_date(img, state)
     return img
+
+
+def _season(state: AppState) -> int:
+    return mountains.season_key(state.now.timetuple().tm_yday)
+
+
+def _overlay(img: Image.Image, glyph: Image.Image, outline: Image.Image, x: int) -> None:
+    img.paste((0, 0, 0), (x, 0), outline)
+    img.paste((255, 255, 255), (x, 0), glyph)
 
 
 def _paste_text(img: Image.Image, text: str) -> None:
     glyph, outline = digits.text_masks(text)
-    x, y = W - glyph.width - 0, 0
-    img.paste((0, 0, 0), (x, y), outline)
-    img.paste((255, 255, 255), (x, y), glyph)
+    _overlay(img, glyph, outline, W - glyph.width)
+
+
+def _paste_date(img: Image.Image, state: AppState) -> None:
+    """Weekday and month/day at the top left, mirroring the temperature's margin."""
+    now = state.now
+    glyph, outline = digits.date_masks(f"{now:%a} {now.month}/{now.day}".upper())
+    _overlay(img, glyph, outline, 0)
 
 
 class SceneRenderer:

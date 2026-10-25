@@ -65,7 +65,7 @@ def _fog_masks() -> tuple[Image.Image, Image.Image]:
     """Two horizontally periodic band masks (they wrap, so they can scroll forever)."""
     profile = (50, 105, 150, 105, 50)
     out = []
-    for seed, rows in ((5, (6, 14, 22)), (9, (10, 18, 25))):
+    for seed, rows in ((5, (13, 21, 29)), (9, (17, 25, 32))):
         rng = random.Random(seed)
         mask = Image.new("L", (W, H), 0)
         px = mask.load()
@@ -100,7 +100,7 @@ def _strike(slot: int):
     x = rng.randint(10, 54)
     pts = [(x, 0)]
     y = 0
-    while y < 20:
+    while y < 27:
         y += rng.randint(2, 4)
         x += rng.randint(-3, 3)
         pts.append((x, y))

@@ -1,7 +1,9 @@
-"""Tiny 3x5 pixel digits for the temperature readout (no dependency on the UI fonts)."""
+"""Overlay text for the scene: the 3x5 temperature digits and the date, each with a dark outline."""
 from functools import lru_cache
 
 from PIL import Image, ImageFilter
+
+from ..ui.fonts import GLYPHS, SPACING
 
 _GLYPHS = {
     "0": ("111", "101", "101", "101", "111"), "1": ("010", "110", "010", "010", "111"),
@@ -28,6 +30,23 @@ def text_masks(text: str) -> tuple[Image.Image, Image.Image]:
     px[1 + width - 1, 1] = 255           # degree dot, top right
     outline = glyph.filter(ImageFilter.MaxFilter(3)).point(lambda v: v * 115 // 255)
     return glyph, outline
+
+
+@lru_cache(maxsize=64)
+def date_masks(text: str) -> tuple[Image.Image, Image.Image]:
+    """(glyph mask, outline mask) for `text` in the UI font, with the same 1 px margin as the temperature."""
+    glyphs = [GLYPHS.get(ch) or GLYPHS["?"] for ch in text]
+    width = sum(len(g[0]) for g in glyphs) + SPACING * (len(glyphs) - 1)
+    glyph = Image.new("L", (width + 2, 7), 0)
+    px = glyph.load()
+    x = 1
+    for g in glyphs:
+        for y, row in enumerate(g):
+            for dx, on in enumerate(row):
+                if on:
+                    px[x + dx, 1 + y] = 255
+        x += len(g[0]) + SPACING
+    return glyph, glyph.filter(ImageFilter.MaxFilter(3)).point(lambda v: v * 115 // 255)
 
 
 def format_temperature(value: float) -> str:

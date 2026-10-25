@@ -7,7 +7,6 @@ from ..state import AppState, Condition
 from . import icons
 from .fonts import HEIGHT, draw_text, text_width
 
-DATE_COLOR = (170, 190, 225)
 LOW_COLOR = (80, 150, 255)
 HIGH_COLOR = (255, 140, 40)
 LABEL_COLOR = (200, 200, 210)
@@ -44,11 +43,6 @@ def _center_x(rect: Rect, width: int, cx: int | None = None) -> int:
 def hour_label(dt) -> str:
     h = dt.hour % 12 or 12
     return f"{h}{'A' if dt.hour < 12 else 'P'}"
-
-
-def draw_date(frame, rect, state: AppState, t: float) -> None:
-    text = f"{state.now:%a} {state.now.month}/{state.now.day}".upper()
-    draw_text(frame, _center_x(rect, text_width(text)), _text_y(rect), text, DATE_COLOR)
 
 
 def draw_temps(frame, rect, state: AppState, t: float) -> None:
@@ -149,7 +143,6 @@ def _staleness_dot(frame, rect, state: AppState) -> None:
 
 
 WIDGETS = {
-    "date": draw_date,
     "temps": draw_temps,
     "next_change": draw_next_change,
     "home": draw_home,
