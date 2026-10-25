@@ -22,26 +22,16 @@ SEED = 64281
 _BLUES = ((90, 128, 200), (68, 106, 178), (52, 84, 144), (42, 66, 108), (32, 50, 78))
 _NIGHTS = ((36, 46, 88), (29, 38, 72), (22, 31, 58), (16, 24, 44), (11, 17, 32))
 STYLES = {
-    # four receding ridges, smooth blue-to-russet hills, two rows of foreground trees
+    # four receding ridges: smooth blue-to-russet hills, then three large foreground trees
     "grove": (
         [(21, [(20, 8, 28), (60, 9, 24)], 0.0), (24, [(2, 9, 26), (40, 10, 24)], 0.0),
-         (27, [(26, 9, 26), (62, 10, 24)], 0.5), (30, [(8, 8, 24), (46, 9, 24)], 0.8)], 1),
-    # the same hills with a single row of trees
-    "meadow": (
-        [(21, [(20, 8, 28), (60, 9, 24)], 0.0), (24, [(2, 9, 26), (40, 10, 24)], 0.0),
-         (27, [(26, 9, 26), (62, 10, 24)], 0.5), (31, [(8, 8, 24), (46, 9, 24)], 0.85)], 0),
+         (27, [(26, 9, 26), (62, 10, 24)], 0.5), (30, [(8, 8, 24), (46, 9, 24)], 0.8)],),
 }
 STYLE = "grove"
 _PINES_X = (2, 7, 12, 16, 21, 44, 49, 53, 58, 62)
-# Crown sprites: h lit, m body, d shaded, "." empty. Lumpy edges read as leaves, not bubbles.
-_CROWNS = (
-    (".hhh.", "hhmmm", "hmmmd", "mmmdd", ".mdd."),
-    ("..hhh..", ".hhhmm.", "hhmmmmm", "hmmmmmd", ".mmmmdd", "..mdd.."),
-    ("...hhh...", "..hhhhm..", ".hhhmmmm.", "hhmmmmmmd", "hmmmmmmdd", ".mmmmmddd", "..mmddd.."),
-)
 _PINES_KEPT = (3, 4, 6)         # indices into _PINES_X that stay evergreen (x = 16, 21, 49)
 # Large foreground trees: (trunk x, crown width, crown height, crown bottom y, colour pick)
-_BIG_TREES = ((6, 22, 20, 28, 0.66), (57, 19, 18, 29, 0.93), (41, 13, 12, 30, 0.4))
+_BIG_TREES = ((6, 22, 20, 32, 0.66), (57, 19, 18, 33, 0.93), (41, 13, 12, 34, 0.4))
 _PINE_WIDTHS = (1, 3, 3, 5, 5, 7, 7, 9)
 _PINE_BASE = 34
 
@@ -114,12 +104,8 @@ def _shapes(style: str):
         tops = _profile(rng, base, peaks)
         ridges.append((tops, fol))
     pines = [(x, rng.randint(5, 8), _PINE_BASE + rng.randint(0, 1)) for x in _PINES_X]
-    blobs = []        # small background trees: (x, centre y, radius, colour pick, brightness)
-    for k, x in enumerate(range(1, W + 3, 7) if STYLES[style][1] else ()):
-        blobs.append((x, 31 + rng.randint(-1, 1), rng.randint(3, 4),
-                      (k * 0.37 + rng.random() * 0.25) % 1, 0.8))
     pines = [pines[k] for k in _PINES_KEPT]
-    return ridges, pines, blobs
+    return ridges, pines
 
 
 @lru_cache(maxsize=8)
@@ -181,7 +167,7 @@ def terrain(eq: int, cond: Condition | None, season: int,
     light, tw = light_level(elev), twilight(elev)
     g = GRAY_MIX[cond] * 0.7
     snowing = cond is Condition.SNOW
-    ridges, pines, blobs = _shapes(style)
+    ridges, pines = _shapes(style)
     weights = tree_weights(season * SEASON_STEP + SEASON_STEP // 2)
     lively = [(c, w) for c, w in weights if c not in (_TREES["brown"], _TREES["bare"], _TREES["conifer"])]
     total = sum(w for _, w in lively)
@@ -222,25 +208,6 @@ def terrain(eq: int, cond: Condition | None, season: int,
                 if snowing and y - top < 2 + (x + y) % 2:   # a dusting on the crests
                     col = lerp(col, scale(snow, face * 0.92 + 0.08), 0.85)
                 img.putpixel((x, y), col + (255,))
-
-    for x, cy, r, v, bright in blobs:                     # deciduous trees, each its own colour
-        crown = _CROWNS[0 if r <= 3 else 1 if r == 4 else 2]
-        col = scale(tone(n, _foliage(v, leaves_pal), 0.95), bright)
-        shades = {"h": scale(col, 1.28), "m": col, "d": scale(col, 0.66), "s": scale(col, 1.1)}
-        bottom = min(cy + r + 1, H)                          # where the trunk meets the ground
-        trunk = lerp((22, 16, 14), (82, 58, 40), light)
-        for ty in (bottom - 1, bottom - 2):
-            if 0 <= ty < H:
-                draw.point([(x, ty)], fill=trunk + (255,))
-        top = bottom - 2 - len(crown)
-        for dy, row in enumerate(crown):
-            for dx, ch in enumerate(row):
-                if ch != ".":
-                    if ch == "m" and (x + dx + dy * 2) % 5 == 0:
-                        ch = "s"                              # sprinkle of lighter leaves
-                    px, py = x - len(row) // 2 + dx, top + dy
-                    if 0 <= px < W and 0 <= py < H:
-                        draw.point([(px, py)], fill=shades[ch] + (255,))
 
     pine = lerp(_PINE_NIGHT, _PINE[0], light)
     pine = lerp(pine, gray_of(pine), g)
