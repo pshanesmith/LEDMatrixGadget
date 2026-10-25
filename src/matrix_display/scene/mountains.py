@@ -41,7 +41,7 @@ _CROWNS = (
 )
 _PINES_KEPT = (3, 4, 6)         # indices into _PINES_X that stay evergreen (x = 16, 21, 49)
 # Large foreground trees: (trunk x, crown width, crown height, crown bottom y, colour pick)
-_BIG_TREES = ((7, 17, 16, 27, 0.66), (58, 15, 15, 28, 0.93), (42, 11, 11, 29, 0.38))
+_BIG_TREES = ((6, 22, 20, 28, 0.66), (57, 19, 18, 29, 0.93), (41, 13, 12, 30, 0.4))
 _PINE_WIDTHS = (1, 3, 3, 5, 5, 7, 7, 9)
 _PINE_BASE = 34
 
@@ -123,29 +123,47 @@ def _shapes(style: str):
 
 
 @lru_cache(maxsize=8)
-def _big_crown(w: int, h: int, seed: int) -> tuple[str, ...]:
-    """A lumpy crown from overlapping ellipses, lit from the upper left, with dark gaps and
-    a few light leaves. Rows of h/m/d/s characters; "." is empty."""
+def _big_tree(w: int, h: int, seed: int, v: float):
+    """A deciduous tree as pixels: a crown of overlapping leaf clusters (each lit from the upper
+    left, each a slightly different fall colour near `v`), a ragged edge, gaps that show the
+    branches, and a trunk that forks up into the crown.
+
+    Returns (leaves, branches): leaves is {(dx, dy): (shade char, colour pick)}, branches a
+    list of ((x0, y0), (x1, y1)) in crown coordinates, the first starting below the crown."""
     rng = random.Random(seed)
-    lobes = [(0.5, 0.58, 0.5, 0.42), (0.27, 0.52, 0.3, 0.36), (0.73, 0.52, 0.3, 0.36),
-             (0.4, 0.3, 0.3, 0.3), (0.62, 0.3, 0.28, 0.3)]
-    rows = []
-    for y in range(h):
-        row = ""
-        for x in range(w):
-            inside = any(((x + 0.5) / w - cx) ** 2 / rx ** 2 + ((y + 0.5) / h - cy) ** 2 / ry ** 2 <= 0.55
-                         for cx, cy, rx, ry in lobes)
-            if not inside:
-                row += "."
-                continue
-            val = (x / w + y / h) / 2 + rng.uniform(-0.14, 0.14)
-            row += "h" if val < 0.3 else "m" if val < 0.62 else "d"
-            if row[-1] == "m" and rng.random() < 0.12:
-                row = row[:-1] + "s"
-            elif rng.random() < 0.05:
-                row = row[:-1] + "d"
-        rows.append(row)
-    return tuple(rows)
+    clusters = []
+    for k in range(w * h // 9):                         # clumps fill an irregular dome
+        for _ in range(20):
+            cx, cy = rng.uniform(0, w), rng.uniform(0, h)
+            nx, ny = (cx - w / 2) / (w / 2), (cy - h * 0.55) / (h * 0.55)
+            if nx * nx + ny * ny <= 0.7 + rng.uniform(-0.1, 0.2):
+                break
+        clusters.append((cx, cy, rng.uniform(2.2, 4.2), rng.uniform(1.8, 3.2),
+                         clamp(v + rng.uniform(-0.2, 0.2), 0, 0.999)))
+    clusters.sort(key=lambda c: c[1])                    # lower clumps overlap the ones above
+    leaves = {}
+    for cx, cy, rx, ry, pick in clusters:
+        for y in range(int(cy - ry) - 1, int(cy + ry) + 2):
+            for x in range(int(cx - rx) - 1, int(cx + rx) + 2):
+                nx, ny = (x + 0.5 - cx) / rx, (y + 0.5 - cy) / ry
+                d = nx * nx + ny * ny
+                if d > 1 + rng.uniform(-0.25, 0.2) or not (0 <= x < w and 0 <= y < h):
+                    continue
+                light = nx * 0.45 + ny * 0.85
+                ch = "h" if light < -0.35 else "m" if light < 0.3 else "x" if light > 0.62 else "d"
+                if ch == "m" and rng.random() < 0.1:
+                    ch = "s"
+                leaves[(x, y)] = (ch, pick)
+    for (x, y) in list(leaves):                          # ragged rim, gaps in the shade
+        edge = any((x + dx, y + dy) not in leaves for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)))
+        if (edge and rng.random() < 0.22) or (leaves[(x, y)][0] in "dx" and rng.random() < 0.1):
+            del leaves[(x, y)]
+    top = h * 0.25
+    branches = [((w // 2, h + 3), (w // 2, h * 0.62)),
+                ((w // 2, h * 0.7), (w * 0.25, top + h * 0.2)),
+                ((w // 2, h * 0.66), (w * 0.78, top + h * 0.1)),
+                ((w // 2, h * 0.6), (w * 0.5, top))]
+    return leaves, branches
 
 
 def _shade(day: RGB, night: RGB, light: float, tw: float, warm: float) -> RGB:
@@ -167,7 +185,7 @@ def terrain(eq: int, cond: Condition | None, season: int,
     weights = tree_weights(season * SEASON_STEP + SEASON_STEP // 2)
     lively = [(c, w) for c, w in weights if c not in (_TREES["brown"], _TREES["bare"], _TREES["conifer"])]
     total = sum(w for _, w in lively)
-    leaves = [(c, w / total) for c, w in lively] if total > 0.3 else weights   # bright leaves in season
+    leaves_pal = [(c, w / total) for c, w in lively] if total > 0.3 else weights   # bright leaves in season
     fog_col = lerp((26, 30, 44), (190, 196, 206), light)
     snow = _shade(_SNOW[0], _SNOW[1], light, tw, 0.4)
     n = len(ridges)
@@ -207,7 +225,7 @@ def terrain(eq: int, cond: Condition | None, season: int,
 
     for x, cy, r, v, bright in blobs:                     # deciduous trees, each its own colour
         crown = _CROWNS[0 if r <= 3 else 1 if r == 4 else 2]
-        col = scale(tone(n, _foliage(v, leaves), 0.95), bright)
+        col = scale(tone(n, _foliage(v, leaves_pal), 0.95), bright)
         shades = {"h": scale(col, 1.28), "m": col, "d": scale(col, 0.66), "s": scale(col, 1.1)}
         bottom = min(cy + r + 1, H)                          # where the trunk meets the ground
         trunk = lerp((22, 16, 14), (82, 58, 40), light)
@@ -235,14 +253,16 @@ def terrain(eq: int, cond: Condition | None, season: int,
             draw.line([(x - half, y), (x + half, y)], fill=col + (255,))
         draw.point([(x, base + 1)], fill=scale(pine, 0.7) + (255,))
     for k, (bx, cw, ch, cb, v) in enumerate(_BIG_TREES):       # foreground trees, drawn last
-        col = tone(n, _foliage(v, leaves), 0.95)
-        shades = {"h": scale(col, 1.3), "m": col, "d": scale(col, 0.62), "s": scale(col, 1.12)}
-        trunk = lerp((16, 12, 12), (88, 62, 44), light)
-        draw.rectangle([bx - 1, cb - 3, bx, H], fill=trunk + (255,))
-        draw.line([(bx - 1, cb - 3), (bx - 1, H)], fill=scale(trunk, 1.35) + (255,))
-        for dy, row in enumerate(_big_crown(cw, ch, 100 + k)):
-            for dx, c in enumerate(row):
-                px, py = bx - cw // 2 + dx, cb - ch + dy
-                if c != "." and 0 <= px < W and 0 <= py < H:
-                    draw.point([(px, py)], fill=shades[c] + (255,))
+        leaves, branches = _big_tree(cw, ch, 100 + k, v)
+        ox, oy = bx - cw // 2, cb - ch
+        bark = lerp((14, 11, 12), (92, 66, 48), light)
+        for (x0, y0), (x1, y1) in branches:                    # trunk and the limbs in the crown
+            draw.line([(ox + x0, oy + y0), (ox + x1, oy + y1)], fill=bark + (255,))
+        draw.rectangle([bx - 1, cb - 2, bx, H], fill=bark + (255,))   # 2 px trunk
+        draw.line([(bx - 1, cb - 2), (bx - 1, H)], fill=scale(bark, 1.3) + (255,))
+        draw.point([(bx + 1, y) for y in range(cb + 2, H)], fill=scale(bark, 0.7) + (255,))
+        for (dx, dy), (c, pick) in leaves.items():
+            leaf = tone(n, _foliage(pick, leaves_pal), 0.95)
+            shade = {"h": 1.4, "m": 1.0, "d": 0.6, "x": 0.4, "s": 1.14}[c]
+            draw.point([(ox + dx, oy + dy)], fill=scale(leaf, shade) + (255,))
     return img.convert("RGB"), img.getchannel("A")
