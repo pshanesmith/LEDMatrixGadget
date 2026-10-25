@@ -107,8 +107,12 @@ class FrameStats:
                 f"overruns={self.overruns}")
 
 
+_throttle_readable = True     # cleared once vcgencmd fails, so it is not re-run every minute
+
+
 def system_health() -> str:
     """RSS, CPU temperature and throttle flags for the log (all best-effort)."""
+    global _throttle_readable
     parts = []
     try:
         with open("/proc/self/status") as fh:
@@ -123,13 +127,20 @@ def system_health() -> str:
             parts.append(f"temp={int(fh.read()) / 1000:.0f}C")
     except (OSError, ValueError):
         pass
-    try:
-        out = subprocess.run(["vcgencmd", "get_throttled"], capture_output=True, text=True,
-                             timeout=2).stdout.strip()
-        if out.startswith("throttled="):     # unreadable (empty) once root privileges are dropped
+    if _throttle_readable:
+        try:
+            out = subprocess.run(["vcgencmd", "get_throttled"], capture_output=True, text=True,
+                                 timeout=2).stdout.strip()
+        except subprocess.TimeoutExpired:   # a busy moment: try again next time
+            out = None
+        except (OSError, subprocess.SubprocessError):
+            out = ""
+        if out is None:
+            pass
+        elif out.startswith("throttled="):   # unreadable (empty) once root privileges are dropped
             parts.append(out)
-    except (OSError, subprocess.SubprocessError):
-        pass
+        else:
+            _throttle_readable = False
     return " ".join(parts)
 
 

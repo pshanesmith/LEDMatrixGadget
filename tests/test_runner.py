@@ -141,3 +141,37 @@ def test_state_dir_precedence(tmp_path, monkeypatch):
 def test_frame_stats_summary():
     st = FrameStats(); st.record(10, False); st.record(30, True)
     assert "frames=2" in st.summary() and "avg=20.0ms" in st.summary() and "overruns=1" in st.summary()
+
+
+def test_system_health_stops_calling_vcgencmd_once_unreadable(monkeypatch):
+    import subprocess
+    from matrix_display import runner
+    calls = []
+
+    def fake_run(*args, **kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(runner, "_throttle_readable", True)
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    runner.system_health()
+    runner.system_health()
+    assert len(calls) == 1
+
+
+def test_system_health_retries_vcgencmd_after_a_timeout(monkeypatch):
+    import subprocess
+    from matrix_display import runner
+    calls = []
+
+    def fake_run(*args, **kwargs):
+        calls.append(args)
+        if len(calls) == 1:
+            raise subprocess.TimeoutExpired("vcgencmd", 2)
+        return subprocess.CompletedProcess(args, 0, stdout="throttled=0x0", stderr="")
+
+    monkeypatch.setattr(runner, "_throttle_readable", True)
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    runner.system_health()
+    assert "throttled=0x0" in runner.system_health()
+    assert len(calls) == 2

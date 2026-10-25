@@ -39,13 +39,25 @@ class HardwareDisplay(Display):
         self._unsafe = not cfg.safe_image_copy
         self._matrix = RGBMatrix(options=o)
         self._canvas = self._matrix.CreateFrameCanvas()
+        self._shown: bytes | None = None      # pixels of the frame on the panel
 
     def show(self, image: Image.Image) -> None:
-        self._canvas.SetImage(self._check(image), 0, 0, unsafe=self._unsafe)
+        image = self._check(image)
+        # Most frames of a calm scene are identical to the last one; skipping them saves the
+        # copy (about 8 ms on the safe path) and the swap, and the panel keeps the same picture.
+        pixels = image.tobytes()
+        if pixels == self._shown:
+            return
+        self._canvas.SetImage(image, 0, 0, unsafe=self._unsafe)
         self._canvas = self._matrix.SwapOnVSync(self._canvas)
+        self._shown = pixels
 
     def set_brightness(self, percent: int) -> None:
-        self._matrix.brightness = max(1, min(100, percent))
+        percent = max(1, min(100, percent))
+        if percent != self._matrix.brightness:
+            self._matrix.brightness = percent
+            self._shown = None                 # brightness is applied as pixels are set: redraw
 
     def close(self) -> None:
         self._matrix.Clear()
+        self._shown = None

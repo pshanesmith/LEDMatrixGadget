@@ -64,3 +64,24 @@ def test_options_passed_through(fake_rgbmatrix):
     d = make(DisplayConfig(pwm_bits=9, limit_refresh_hz=150, brightness=90, max_brightness=70))
     o = d._matrix.options
     assert (o.pwm_bits, o.limit_refresh_rate_hz, o.brightness, o.hardware_mapping) == (9, 150, 70, "adafruit-hat-pwm")
+
+
+def test_unchanged_frames_are_not_pushed_again(fake_rgbmatrix):
+    d = make(DisplayConfig())
+    d.show(Image.new("RGB", (64, 64), (10, 20, 30)))
+    d.show(Image.new("RGB", (64, 64), (10, 20, 30)))
+    assert len(d._canvas.calls) == 1
+    d.show(Image.new("RGB", (64, 64), (10, 20, 31)))
+    assert len(d._canvas.calls) == 2
+
+
+def test_brightness_change_redraws_the_same_frame(fake_rgbmatrix):
+    d = make(DisplayConfig())
+    frame = Image.new("RGB", (64, 64), (10, 20, 30))
+    d.show(frame)
+    d.set_brightness(d._matrix.brightness)      # no change: nothing to redraw
+    d.show(frame)
+    assert len(d._canvas.calls) == 1
+    d.set_brightness(20)                        # applied as pixels are set, so push again
+    d.show(frame)
+    assert len(d._canvas.calls) == 2
