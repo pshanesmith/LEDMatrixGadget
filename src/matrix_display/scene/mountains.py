@@ -16,12 +16,27 @@ from .palette import GRAY_MIX, H, RGB, W, clamp, gray_of, lerp, light_level, sca
 
 SEED = 64281
 
-# (baseline y, [(peak x, height, width)]), back to front. Rounded domes with soft valleys.
-_RIDGES = (
-    (28, [(10, 15, 13), (34, 17, 12), (58, 14, 12)]),
-    (31, [(0, 11, 10), (22, 12, 9), (46, 11, 10), (64, 12, 9)]),
-    (34, [(14, 7, 9), (40, 7, 10), (60, 6, 8)]),
-)
+# Terrain styles. Each ridge is (baseline y, [(peak x, height, width)], foliage 0..1, day blue,
+# night colour), back to front. Wide, low domes keep the slopes gentle like old Appalachian
+# ridges; far ridges are plain atmospheric blue and only the near ones carry autumn colour.
+_BLUES = ((100, 128, 182), (82, 108, 158), (64, 88, 128), (48, 68, 100), (36, 52, 76))
+_NIGHTS = ((36, 46, 88), (29, 38, 72), (22, 31, 58), (16, 24, 44), (11, 17, 32))
+STYLES = {
+    # three broad rolling ridges
+    "rolling": (
+        [(25, [(16, 10, 26), (52, 11, 24)], 0.0), (30, [(0, 9, 24), (34, 10, 22), (64, 9, 24)], 0.5),
+         (35, [(20, 9, 22), (56, 9, 22)], 0.9)], 0, 0),
+    # five receding layers, like the photo: blue distance, colour in the near hills
+    "layered": (
+        [(22, [(22, 7, 28), (60, 8, 24)], 0.0), (25, [(4, 8, 26), (40, 9, 24)], 0.0),
+         (28, [(26, 9, 26), (62, 9, 24)], 0.15), (31, [(8, 9, 24), (46, 10, 24)], 0.55),
+         (35, [(28, 9, 24), (62, 8, 22)], 0.9)], 0, 0),
+    # layered blue distance with a band of big round foreground trees
+    "trees": (
+        [(23, [(20, 8, 28), (58, 9, 24)], 0.0), (26, [(2, 9, 26), (38, 9, 24)], 0.0),
+         (29, [(26, 9, 26), (62, 9, 24)], 0.3), (33, [(10, 8, 24), (48, 8, 24)], 0.75)], 1, 12),
+}
+STYLE = "layered"
 _PINES_X = (2, 7, 12, 16, 21, 44, 49, 53, 58, 62)
 _PINE_WIDTHS = (1, 3, 3, 5, 5, 7, 7, 9)
 _PINE_BASE = 34
@@ -44,12 +59,10 @@ _SEASONS = (
     (320, {"conifer": 0.15, "brown": 0.4, "orange": 0.2, "bare": 0.15, "yellow": 0.1}),
     (350, {"conifer": 0.2, "bare": 0.5, "brown": 0.3}),
 )
-_NIGHT_TINT = (14, 20, 40)
 _SNOW = ((236, 242, 252), (62, 76, 112))
 _PINE = ((14, 44, 32), (4, 10, 12))
-_HAZE = (0.42, 0.2, 0.04)         # how far each ridge fades toward the distance haze
-_WARM = (0.25, 0.25, 0.04)        # twilight tint per ridge
-_FOG_AMOUNT = (0.6, 0.35, 0.1)
+_FOG_AMOUNT = (0.6, 0.5, 0.4, 0.3, 0.2)
+_PINE_NIGHT = (7, 12, 20)
 SEASON_STEP = 4                   # days per terrain cache entry
 
 
@@ -83,68 +96,90 @@ def _profile(rng: random.Random, base: int, peaks) -> list[int]:
     tops = []
     for x in range(W):
         h = max(ph * math.exp(-(((x - px) / pw) ** 2)) for px, ph, pw in peaks)
-        h += 0.7 * math.sin(x * 0.55 + base)             # small knolls on the ridgeline
-        jitter = 1 if rng.random() < 0.12 else 0
+        h += 0.5 * math.sin(x * 0.4 + base)              # faint knolls on the ridgeline
+        jitter = 1 if rng.random() < 0.06 else 0
         tops.append(min(base + 3, round(base - h) + jitter))
     return tops
 
 
-@lru_cache(maxsize=1)
-def _shapes():
+@lru_cache(maxsize=4)
+def _shapes(style: str):
     rng = random.Random(SEED)
     ridges = []
-    for base, peaks in _RIDGES:
+    for base, peaks, fol in STYLES[style][0]:
         tops = _profile(rng, base, peaks)
-        blocks = {(bx, by): rng.random() for bx in range(W // 2 + 1) for by in range(H // 2 + 1)}
-        u = [[blocks[(x // 2, y // 2)] if rng.random() > 0.3 else rng.random() for y in range(H)]
+        blocks = {(bx, by): rng.random() for bx in range(W // 4 + 2) for by in range(H // 3 + 1)}
+        u = [[blocks[((x + (y // 3) % 2 * 2) // 4, y // 3)] if rng.random() > 0.1 else rng.random() for y in range(H)]
              for x in range(W)]
-        ridges.append((tops, u))
+        ridges.append((tops, u, fol))
     pines = [(x, rng.randint(5, 8), _PINE_BASE + rng.randint(0, 1)) for x in _PINES_X]
-    return ridges, pines
+    blobs = [(x, 31 + rng.randint(0, 3), rng.randint(2, 4), (k * 0.37 + rng.random() * 0.2) % 1)
+             for k, x in enumerate(range(-2, W + 3, 6))]
+    return ridges, pines, blobs
 
 
-def _lit(day: RGB, light: float, tw: float, warm: float) -> RGB:
-    night = lerp(scale(day, 0.2), _NIGHT_TINT, 0.45)
+def _shade(day: RGB, night: RGB, light: float, tw: float, warm: float) -> RGB:
     return lerp(lerp(night, day, light), (255, 150, 110), warm * tw)
 
 
 @lru_cache(maxsize=256)
-def terrain(eq: int, cond: Condition | None, season: int) -> tuple[Image.Image, Image.Image]:
-    """(RGB, mask) of the ridges and pines at 64x35 for elevation eq/40, a condition and a
-    season_key()."""
+def terrain(eq: int, cond: Condition | None, season: int,
+            style: str | None = None) -> tuple[Image.Image, Image.Image]:
+    """(RGB, mask) of the ridges and trees at 64x35 for elevation eq/40, a condition and a
+    season_key(). Foliage colour fades out with the light: at night the hills are plain
+    blue silhouettes, stepped so each ridge stays distinct from the sky and its neighbours."""
+    style = style or STYLE
     elev = eq / 40
     light, tw = light_level(elev), twilight(elev)
     g = GRAY_MIX[cond] * 0.7
     snowing = cond is Condition.SNOW
-    ridges, pines = _shapes()
+    ridges, pines, blobs = _shapes(style)
     weights = tree_weights(season * SEASON_STEP + SEASON_STEP // 2)
-    haze = lerp((20, 26, 48), (158, 178, 210), light)
     fog_col = lerp((26, 30, 44), (190, 196, 206), light)
-    snow = _lit(_SNOW[0], light, tw, 0.4)
+    snow = _shade(_SNOW[0], _SNOW[1], light, tw, 0.4)
+    n = len(ridges)
+    ramp = n - 1 if n > 1 else 1
+
+    def tone(i: int, foliage: RGB | None, fol: float) -> RGB:
+        k = min(len(_BLUES) - 1, round(i * (len(_BLUES) - 1) / ramp))
+        day = _BLUES[k]
+        if foliage is not None and fol:
+            day = lerp(day, scale(foliage, 0.6 + 0.4 * fol), fol)   # far hills darker, near ones bright
+        night = _NIGHTS[k]
+        col = _shade(day, night, light, tw, 0.15 + 0.1 * (i / ramp))
+        col = lerp(col, gray_of(col), g)
+        if cond is Condition.FOG:
+            col = lerp(col, fog_col, _FOG_AMOUNT[min(i, 4)])
+        return col
 
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
-    for i, (tops, u) in enumerate(ridges):
+    for i, (tops, u, fol) in enumerate(ridges):
+        base_col = tone(i, None, 0)
         for x in range(W):
             top = tops[x]
             ahead = tops[min(W - 1, x + 3)]
-            face = 0.82 if ahead < top - 1 else 1.0   # slopes rising to the right sit in shade
+            face = 0.88 if ahead < top - 1 else 1.0   # slopes rising to the right sit in shade
             for y in range(max(top, 0), H):
                 depth = clamp((y - top) / 12)
-                col = _lit(_foliage(u[x][y], weights), light, tw, _WARM[i])
-                col = lerp(col, haze, _HAZE[i])
-                col = lerp(col, gray_of(col), g)
-                if cond is Condition.FOG:
-                    col = lerp(col, fog_col, _FOG_AMOUNT[i])
-                col = scale(col, face * (1 - 0.28 * depth))
+                col = tone(i, _foliage(u[x][y], weights), fol) if fol else base_col
+                col = scale(col, face * (1 - 0.22 * depth))
                 if snowing and y - top < 2 + (x + y) % 2:   # a dusting on the crests
                     col = lerp(col, scale(snow, face * 0.92 + 0.08), 0.85)
                 img.putpixel((x, y), col + (255,))
 
-    pine = lerp(_PINE[1], _PINE[0], light)
-    pine = lerp(lerp(pine, haze, 0.05), gray_of(pine), g)
-    tip = _lit(_SNOW[0], light, tw, 0.3)
+    if STYLES[style][1]:                                  # round foreground trees
+        for x, cy, r, v in blobs:
+            col = tone(n, _foliage(v, weights), 0.95)
+            lo, hi = scale(col, 0.72), scale(col, 1.18)
+            draw.ellipse([x - r, cy - r, x + r, cy + r + 3], fill=lo + (255,))
+            draw.ellipse([x - r, cy - r, x + r - 1, cy + r], fill=col + (255,))
+            draw.point([(x - 1, cy - r + 1)], fill=hi + (255,))
+
+    pine = lerp(_PINE_NIGHT, _PINE[0], light)
+    pine = lerp(pine, gray_of(pine), g)
+    tip = _shade(_SNOW[0], _SNOW[1], light, tw, 0.3)
     for x, h, base in pines:
         for r in range(h):
             half = _PINE_WIDTHS[min(r, len(_PINE_WIDTHS) - 1)] // 2
