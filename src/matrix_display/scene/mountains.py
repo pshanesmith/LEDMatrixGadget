@@ -35,6 +35,10 @@ STYLES = {
     "trees": (
         [(23, [(20, 8, 28), (58, 9, 24)], 0.0), (26, [(2, 9, 26), (38, 9, 24)], 0.0),
          (29, [(26, 9, 26), (62, 9, 24)], 0.3), (33, [(10, 8, 24), (48, 8, 24)], 0.75)], 1, 12),
+    # smooth blue-to-russet hills (no patchwork) with two rows of individually coloured trees
+    "grove": (
+        [(21, [(20, 8, 28), (60, 9, 24)], 0.0), (24, [(2, 9, 26), (40, 10, 24)], 0.0),
+         (27, [(26, 9, 26), (62, 10, 24)], 0.3), (30, [(8, 8, 24), (46, 9, 24)], 0.55)], 2, 1),
 }
 STYLE = "layered"
 _PINES_X = (2, 7, 12, 16, 21, 44, 49, 53, 58, 62)
@@ -113,8 +117,12 @@ def _shapes(style: str):
              for x in range(W)]
         ridges.append((tops, u, fol))
     pines = [(x, rng.randint(5, 8), _PINE_BASE + rng.randint(0, 1)) for x in _PINES_X]
-    blobs = [(x, 31 + rng.randint(0, 3), rng.randint(2, 4), (k * 0.37 + rng.random() * 0.2) % 1)
-             for k, x in enumerate(range(-2, W + 3, 6))]
+    blobs = []        # (x, centre y, radius, colour pick, brightness), back row first
+    rows = ((30, 4, 4, 0.78), (33, 5, 5, 1.0))[2 - STYLES[style][1]:]
+    for row, (cy, rmax, step, bright) in enumerate(rows):
+        for k, x in enumerate(range(-2 + 3 * row, W + 3, step)):
+            blobs.append((x, cy + rng.randint(-1, 2), rng.randint(3, rmax),
+                          (k * 0.37 + row * 0.5 + rng.random() * 0.25) % 1, bright))
     return ridges, pines, blobs
 
 
@@ -138,6 +146,7 @@ def terrain(eq: int, cond: Condition | None, season: int,
     fog_col = lerp((26, 30, 44), (190, 196, 206), light)
     snow = _shade(_SNOW[0], _SNOW[1], light, tw, 0.4)
     n = len(ridges)
+    mean = lerp(tuple(round(sum(c[k] * w for c, w in weights)) for k in range(3)), (214, 112, 40), 0.3)
     ramp = n - 1 if n > 1 else 1
 
     def tone(i: int, foliage: RGB | None, fol: float) -> RGB:
@@ -163,19 +172,25 @@ def terrain(eq: int, cond: Condition | None, season: int,
             face = 0.88 if ahead < top - 1 else 1.0   # slopes rising to the right sit in shade
             for y in range(max(top, 0), H):
                 depth = clamp((y - top) / 12)
-                col = tone(i, _foliage(u[x][y], weights), fol) if fol else base_col
+                if not fol:
+                    col = base_col
+                elif STYLES[style][2] == 1:                  # smooth: the season's average foliage
+                    col = tone(i, mean, fol)
+                    if y - top < 1:
+                        col = scale(col, 1.12)               # lit crest
+                else:
+                    col = tone(i, _foliage(u[x][y], weights), fol)
                 col = scale(col, face * (1 - 0.22 * depth))
                 if snowing and y - top < 2 + (x + y) % 2:   # a dusting on the crests
                     col = lerp(col, scale(snow, face * 0.92 + 0.08), 0.85)
                 img.putpixel((x, y), col + (255,))
 
-    if STYLES[style][1]:                                  # round foreground trees
-        for x, cy, r, v in blobs:
-            col = tone(n, _foliage(v, weights), 0.95)
-            lo, hi = scale(col, 0.72), scale(col, 1.18)
-            draw.ellipse([x - r, cy - r, x + r, cy + r + 3], fill=lo + (255,))
-            draw.ellipse([x - r, cy - r, x + r - 1, cy + r], fill=col + (255,))
-            draw.point([(x - 1, cy - r + 1)], fill=hi + (255,))
+    for x, cy, r, v, bright in blobs:                     # round foreground trees, each its own colour
+        col = scale(tone(n, _foliage(v, weights), 0.95), bright)
+        lo, hi = scale(col, 0.72), scale(col, 1.18)
+        draw.ellipse([x - r, cy - r, x + r, cy + r], fill=lo + (255,))
+        draw.ellipse([x - r, cy - r, x + r - 1, cy + r - 1], fill=col + (255,))
+        draw.point([(x - 1, cy - r + 1)], fill=hi + (255,))
 
     pine = lerp(_PINE_NIGHT, _PINE[0], light)
     pine = lerp(pine, gray_of(pine), g)
