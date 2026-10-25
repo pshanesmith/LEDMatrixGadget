@@ -25,11 +25,11 @@ STYLES = {
     # four receding ridges, smooth blue-to-russet hills, two rows of foreground trees
     "grove": (
         [(21, [(20, 8, 28), (60, 9, 24)], 0.0), (24, [(2, 9, 26), (40, 10, 24)], 0.0),
-         (27, [(26, 9, 26), (62, 10, 24)], 0.5), (30, [(8, 8, 24), (46, 9, 24)], 0.8)], 2),
+         (27, [(26, 9, 26), (62, 10, 24)], 0.5), (30, [(8, 8, 24), (46, 9, 24)], 0.8)], 1),
     # the same hills with a single row of trees
     "meadow": (
         [(21, [(20, 8, 28), (60, 9, 24)], 0.0), (24, [(2, 9, 26), (40, 10, 24)], 0.0),
-         (27, [(26, 9, 26), (62, 10, 24)], 0.5), (31, [(8, 8, 24), (46, 9, 24)], 0.85)], 1),
+         (27, [(26, 9, 26), (62, 10, 24)], 0.5), (31, [(8, 8, 24), (46, 9, 24)], 0.85)], 0),
 }
 STYLE = "grove"
 _PINES_X = (2, 7, 12, 16, 21, 44, 49, 53, 58, 62)
@@ -39,7 +39,9 @@ _CROWNS = (
     ("..hhh..", ".hhhmm.", "hhmmmmm", "hmmmmmd", ".mmmmdd", "..mdd.."),
     ("...hhh...", "..hhhhm..", ".hhhmmmm.", "hhmmmmmmd", "hmmmmmmdd", ".mmmmmddd", "..mmddd.."),
 )
-_PINES_KEPT = (1, 3, 6, 8)      # indices into _PINES_X that stay evergreen
+_PINES_KEPT = (3, 4, 6)         # indices into _PINES_X that stay evergreen (x = 16, 21, 49)
+# Large foreground trees: (trunk x, crown width, crown height, crown bottom y, colour pick)
+_BIG_TREES = ((7, 17, 16, 27, 0.66), (58, 15, 15, 28, 0.93), (42, 11, 11, 29, 0.38))
 _PINE_WIDTHS = (1, 3, 3, 5, 5, 7, 7, 9)
 _PINE_BASE = 34
 
@@ -112,18 +114,38 @@ def _shapes(style: str):
         tops = _profile(rng, base, peaks)
         ridges.append((tops, fol))
     pines = [(x, rng.randint(5, 8), _PINE_BASE + rng.randint(0, 1)) for x in _PINES_X]
-    blobs = []        # (x, centre y, radius, colour pick, brightness), back row first
-    rows = ((29, 4, 6, 0.78), (32, 5, 7, 1.0))[2 - STYLES[style][1]:]
-    for row, (cy, rmax, step, bright) in enumerate(rows):
-        for k, x in enumerate(range(-2 + 3 * row, W + 3, step)):
-            blobs.append((x, cy + rng.randint(-1, 2), rng.randint(rmax - 1, rmax),
-                          (k * 0.37 + row * 0.5 + rng.random() * 0.25) % 1, bright))
-    for k, (x, h, base) in list(enumerate(pines)):
-        if k not in _PINES_KEPT:               # the rest become deciduous trees that turn with the season
-            r = rng.randint(4, 5)
-            blobs.append((x, 34 - r + rng.randint(-1, 0), r, rng.uniform(0.4, 1.0), 1.0))
+    blobs = []        # small background trees: (x, centre y, radius, colour pick, brightness)
+    for k, x in enumerate(range(1, W + 3, 7) if STYLES[style][1] else ()):
+        blobs.append((x, 31 + rng.randint(-1, 1), rng.randint(3, 4),
+                      (k * 0.37 + rng.random() * 0.25) % 1, 0.8))
     pines = [pines[k] for k in _PINES_KEPT]
     return ridges, pines, blobs
+
+
+@lru_cache(maxsize=8)
+def _big_crown(w: int, h: int, seed: int) -> tuple[str, ...]:
+    """A lumpy crown from overlapping ellipses, lit from the upper left, with dark gaps and
+    a few light leaves. Rows of h/m/d/s characters; "." is empty."""
+    rng = random.Random(seed)
+    lobes = [(0.5, 0.58, 0.5, 0.42), (0.27, 0.52, 0.3, 0.36), (0.73, 0.52, 0.3, 0.36),
+             (0.4, 0.3, 0.3, 0.3), (0.62, 0.3, 0.28, 0.3)]
+    rows = []
+    for y in range(h):
+        row = ""
+        for x in range(w):
+            inside = any(((x + 0.5) / w - cx) ** 2 / rx ** 2 + ((y + 0.5) / h - cy) ** 2 / ry ** 2 <= 0.55
+                         for cx, cy, rx, ry in lobes)
+            if not inside:
+                row += "."
+                continue
+            val = (x / w + y / h) / 2 + rng.uniform(-0.14, 0.14)
+            row += "h" if val < 0.3 else "m" if val < 0.62 else "d"
+            if row[-1] == "m" and rng.random() < 0.12:
+                row = row[:-1] + "s"
+            elif rng.random() < 0.05:
+                row = row[:-1] + "d"
+        rows.append(row)
+    return tuple(rows)
 
 
 def _shade(day: RGB, night: RGB, light: float, tw: float, warm: float) -> RGB:
@@ -212,4 +234,15 @@ def terrain(eq: int, cond: Condition | None, season: int,
             col = tip if snowing and r < 2 else pine
             draw.line([(x - half, y), (x + half, y)], fill=col + (255,))
         draw.point([(x, base + 1)], fill=scale(pine, 0.7) + (255,))
+    for k, (bx, cw, ch, cb, v) in enumerate(_BIG_TREES):       # foreground trees, drawn last
+        col = tone(n, _foliage(v, leaves), 0.95)
+        shades = {"h": scale(col, 1.3), "m": col, "d": scale(col, 0.62), "s": scale(col, 1.12)}
+        trunk = lerp((16, 12, 12), (88, 62, 44), light)
+        draw.rectangle([bx - 1, cb - 3, bx, H], fill=trunk + (255,))
+        draw.line([(bx - 1, cb - 3), (bx - 1, H)], fill=scale(trunk, 1.35) + (255,))
+        for dy, row in enumerate(_big_crown(cw, ch, 100 + k)):
+            for dx, c in enumerate(row):
+                px, py = bx - cw // 2 + dx, cb - ch + dy
+                if c != "." and 0 <= px < W and 0 <= py < H:
+                    draw.point([(px, py)], fill=shades[c] + (255,))
     return img.convert("RGB"), img.getchannel("A")
