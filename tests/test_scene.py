@@ -141,8 +141,8 @@ def test_date_overlay_is_top_left_and_readable_day_and_night():
     for name in ("clear_day", "clear_night"):
         img = render_state(sample_state(name), 0.0)
         box = img.crop((0, 0, 36, 8)).point(lambda v: 255 if v > 240 else 0).convert("L").getbbox()
-        assert box is not None and box[0] >= 1 and box[1] >= 1, name     # white text, 1 px margin
-        corner = img.crop((0, 0, 1, 1)).getpixel((0, 0))
+        assert box is not None and box[0] >= 2 and box[1] >= 1, name     # white text, clear of the edge
+        corner = img.crop((1, 1, 2, 2)).getpixel((0, 0))
         assert max(corner) < 200, name                                   # outline darkens the sky
 
 
