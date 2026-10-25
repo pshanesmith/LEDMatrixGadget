@@ -21,7 +21,8 @@ GOLDEN = Path(__file__).parent / "golden"
 GOLDEN_CASES = ["all_clear", "rain_then_snow", "counts_zero", "counts_twelve",
                 "gate_open", "weather_none", "stale_home", "stale_weather",
                 "tier_discount", "tier_off_peak", "tier_on_peak", "tier_critical",
-                "tier_unavailable", "tier_counts_twelve", "tier_gate_open"]
+                "tier_unavailable", "tier_counts_twelve", "tier_gate_open",
+                "updates_pending"]
 
 
 def _render(state, t=0.0):

@@ -57,6 +57,7 @@ class HomeAssistantConfig:
     exclude_locks: tuple[str, ...] = ()      # fnmatch globs on entity ids
     exclude_lights: tuple[str, ...] = ()
     power_tier_entity: str = ""              # sensor with the rate tier; empty hides the bolt
+    exclude_updates: tuple[str, ...] = ()    # fnmatch globs on update entity ids to ignore
 
 
 @dataclass(frozen=True)
@@ -136,7 +137,7 @@ def build_config(data: dict, environ: dict[str, str] | None = None,
 
     ha_raw = dict(_only(data.get("homeassistant", {}), HomeAssistantConfig, "homeassistant"))
     ha_raw.pop("token", None)  # tokens are never read from config.toml
-    for key in ("gates", "exclude_locks", "exclude_lights"):
+    for key in ("gates", "exclude_locks", "exclude_lights", "exclude_updates"):
         ha_raw[key] = tuple(ha_raw.get(key, ()))
     ha_raw["url"] = normalize_url(pick("MATRIX_HA_URL") or ha_raw.get("url", DEFAULT_HA_URL))
     ha = HomeAssistantConfig(**ha_raw, token=pick("MATRIX_HA_TOKEN") or "")

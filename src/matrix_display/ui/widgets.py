@@ -18,6 +18,7 @@ BULB_ON = (255, 215, 90)
 LOCK_OK = (110, 130, 150)
 BLUE = (80, 150, 255)
 ORANGE = (255, 140, 40)
+YELLOW = (255, 230, 0)
 # Electricity rate tier -> bolt colour. Unknown or unavailable tiers show a dim bolt.
 TIER_COLORS = {
     "discount": GREEN,
@@ -149,6 +150,13 @@ def draw_home(frame, rect, state: AppState, t: float) -> None:
             icons.blit(frame, rect.x + BOLT_X, rect.y + 1, icons.BOLT,
                        TIER_COLORS.get(home.power_tier, DIM))
     _staleness_dot(frame, rect, state)
+    _maintenance_dot(frame, rect, state)
+
+
+def _maintenance_dot(frame, rect, state: AppState) -> None:
+    """Yellow pixel left of the staleness dot while Home Assistant has updates waiting."""
+    if state.home is not None and state.home.updates_pending:
+        frame.putpixel((rect.x2 - 2, rect.y2 - 1), YELLOW)
 
 
 def _staleness_dot(frame, rect, state: AppState) -> None:

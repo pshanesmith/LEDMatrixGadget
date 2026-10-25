@@ -33,6 +33,7 @@ def variants() -> dict[str, AppState]:
                                                        power_tier="on_peak")),
         "tier_gate_open": replace(rain, home=_home(locks_unlocked=1, lights_on=3,
                                                    gates_open=("gate",), power_tier="critical_peak")),
+        "updates_pending": replace(rain, home=_home(lights_on=3, updates_pending=2)),
         "weather_none": AppState(now=NOON, weather=None, home=_home(lights_on=2)),
         "home_none": replace(rain, home=None),
         "extreme_temps": replace(clear, weather=cold, home=_home(lights_on=1)),
