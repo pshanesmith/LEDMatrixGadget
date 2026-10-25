@@ -10,7 +10,7 @@ from ..state import Condition
 from .palette import GRAY_MIX, H, RGB, W, clamp, gray_of, lerp, light_level, scale, sky_colors
 
 HORIZON = 28          # sun/moon centre sits here at sunrise/sunset
-PEAK = 11             # and here at its highest
+PEAK = 8              # and here at its highest
 
 
 @lru_cache(maxsize=96)
