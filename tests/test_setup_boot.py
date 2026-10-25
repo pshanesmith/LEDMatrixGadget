@@ -1,7 +1,13 @@
 """config_txt_update must be idempotent and only touch what it should (sandboxed copy)."""
 import shutil
 import subprocess
+import sys
 from pathlib import Path
+
+import pytest
+
+# The setup scripts target Raspberry Pi OS (GNU userland); skip on macOS/BSD.
+pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="Pi setup scripts need GNU/Linux")
 
 ROOT = Path(__file__).resolve().parent.parent
 COMMON = ROOT / "setup/lib/common.sh"
