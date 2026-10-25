@@ -85,8 +85,8 @@ def test_compositor_blank_and_debug_and_register():
     assert blank.size == (64, 64) and blank.getbbox() is None
     assert Compositor(debug_layout=True).render(state).getbbox() is not None
     comp = Compositor()
-    comp.register("date", lambda f, r, s, t: f.putpixel((r.x, r.y), (255, 0, 0)))
-    assert comp.render(state).getpixel((0, 0)) == (255, 0, 0)
+    comp.register("temps", lambda f, r, s, t: f.putpixel((r.x, r.y), (255, 0, 0)))
+    assert comp.render(state).getpixel((0, layout.TEMPS.y)) == (255, 0, 0)
     with pytest.raises(KeyError):
         comp.register("nope", lambda *a: None)
 

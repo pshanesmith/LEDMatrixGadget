@@ -51,7 +51,7 @@ def test_none_state_does_not_raise():
 
 def test_all_widgets_registered():
     comp = build_default_compositor(include_scene=False)
-    assert {"date", "temps", "next_change", "home"} <= set(comp._drawers)
+    assert {"temps", "next_change", "home"} <= set(comp._drawers)
 
 
 def test_icon_sizes():

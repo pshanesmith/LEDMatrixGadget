@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 from ..state import Condition
 
-W, H = 64, 28
+W, H = 64, 35
 RGB = tuple[int, int, int]
 
 # How much each condition greys the sky and terrain (0 = untouched).

@@ -68,15 +68,15 @@ def test_render_error_keeps_last_good_frame_and_does_not_crash():
         if calls["n"] > 3:
             raise RuntimeError("widget bug")
         frame.putpixel((rect.x, rect.y), (255, 0, 0))
-    comp.register("date", flaky)
+    comp.register("temps", flaky)
     runner, display, _, _ = make_runner(compositor=comp)
     runner.run(max_frames=10)
-    assert display.last_frame.getpixel((0, 0)) == (255, 0, 0)     # stale but present
+    assert display.last_frame.getpixel((0, 35)) == (255, 0, 0)     # stale but present
 
 
 def test_persistent_render_failure_raises_so_systemd_can_restart():
     comp = Compositor()
-    comp.register("date", lambda *a: 1 / 0)
+    comp.register("temps", lambda *a: 1 / 0)
     runner, *_ = make_runner(compositor=comp)
     with pytest.raises(ZeroDivisionError):
         runner.run(max_frames=MAX_CONSECUTIVE_RENDER_FAILURES + 5)
@@ -87,7 +87,7 @@ def test_slow_frames_are_dropped_not_queued():
     clock_holder = {}
     def slow(frame, rect, state, t):
         clock_holder["c"].t += 0.5                               # each frame takes 500 ms
-    comp.register("date", slow)
+    comp.register("temps", slow)
     runner, display, clock, _ = make_runner(compositor=comp)
     clock_holder["c"] = clock
     runner.run(max_frames=5)

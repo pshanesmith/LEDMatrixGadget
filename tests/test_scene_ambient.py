@@ -9,12 +9,12 @@ from matrix_display.samples import sample_state
 def changed_fraction(name, seconds, step=0.25):
     comp = build_default_compositor()
     st = sample_state(name)
-    frames = [comp.render(st, i * step).crop((0, 7, 64, 35)) for i in range(int(seconds / step))]
+    frames = [comp.render(st, i * step).crop((0, 0, 64, 35)) for i in range(int(seconds / step))]
     changed = set()
     for a, b in zip(frames, frames[1:]):
         px = ImageChops.difference(a, b).convert("L").load()
-        changed |= {(x, y) for y in range(28) for x in range(64) if px[x, y]}
-    return len(changed) / (64 * 28)
+        changed |= {(x, y) for y in range(35) for x in range(64) if px[x, y]}
+    return len(changed) / (64 * 35)
 
 
 def test_clear_day_is_not_frozen():
