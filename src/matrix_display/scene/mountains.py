@@ -19,7 +19,7 @@ SEED = 64281
 # Terrain styles. Each ridge is (baseline y, [(peak x, height, width)], foliage 0..1, day blue,
 # night colour), back to front. Wide, low domes keep the slopes gentle like old Appalachian
 # ridges; far ridges are plain atmospheric blue and only the near ones carry autumn colour.
-_BLUES = ((100, 128, 182), (82, 108, 158), (64, 88, 128), (48, 68, 100), (36, 52, 76))
+_BLUES = ((90, 128, 200), (68, 106, 178), (52, 84, 144), (42, 66, 108), (32, 50, 78))
 _NIGHTS = ((36, 46, 88), (29, 38, 72), (22, 31, 58), (16, 24, 44), (11, 17, 32))
 STYLES = {
     # three broad rolling ridges
@@ -38,7 +38,7 @@ STYLES = {
     # smooth blue-to-russet hills (no patchwork) with two rows of individually coloured trees
     "grove": (
         [(21, [(20, 8, 28), (60, 9, 24)], 0.0), (24, [(2, 9, 26), (40, 10, 24)], 0.0),
-         (27, [(26, 9, 26), (62, 10, 24)], 0.3), (30, [(8, 8, 24), (46, 9, 24)], 0.55)], 2, 1),
+         (27, [(26, 9, 26), (62, 10, 24)], 0.5), (30, [(8, 8, 24), (46, 9, 24)], 0.8)], 2, 1),
 }
 STYLE = "layered"
 _PINES_X = (2, 7, 12, 16, 21, 44, 49, 53, 58, 62)
@@ -146,7 +146,7 @@ def terrain(eq: int, cond: Condition | None, season: int,
     fog_col = lerp((26, 30, 44), (190, 196, 206), light)
     snow = _shade(_SNOW[0], _SNOW[1], light, tw, 0.4)
     n = len(ridges)
-    mean = lerp(tuple(round(sum(c[k] * w for c, w in weights)) for k in range(3)), (214, 112, 40), 0.3)
+    mean = lerp(tuple(round(sum(c[k] * w for c, w in weights)) for k in range(3)), (204, 82, 30), 0.5)
     ramp = n - 1 if n > 1 else 1
 
     def tone(i: int, foliage: RGB | None, fol: float) -> RGB:
