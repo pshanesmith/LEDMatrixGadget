@@ -19,7 +19,9 @@ from matrix_display.ui.variants import variants
 
 GOLDEN = Path(__file__).parent / "golden"
 GOLDEN_CASES = ["all_clear", "rain_then_snow", "counts_zero", "counts_twelve",
-                "gate_open", "weather_none", "stale_home", "stale_weather"]
+                "gate_open", "weather_none", "stale_home", "stale_weather",
+                "tier_discount", "tier_off_peak", "tier_on_peak", "tier_critical",
+                "tier_unavailable", "tier_counts_twelve", "tier_gate_open"]
 
 
 def _render(state, t=0.0):
@@ -56,7 +58,7 @@ def test_icon_sizes():
     for cond in Condition:
         rows = icons.WEATHER[cond]
         assert len(rows) == 9 and all(len(r) == 9 for r in rows), cond
-    for rows in (*icons.LOCK.values(), icons.BULB):
+    for rows in (*icons.LOCK.values(), icons.BULB, icons.BOLT):
         assert len(rows) == 9 and all(len(r) == 7 for r in rows)
     for rows in icons.GATE.values():
         assert len(rows) == 9 and all(len(r) == 9 for r in rows)

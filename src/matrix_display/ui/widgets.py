@@ -17,6 +17,19 @@ AMBER = (255, 170, 0)
 GREEN = (30, 220, 70)
 BULB_ON = (255, 215, 90)
 LOCK_OK = (110, 130, 150)
+BLUE = (80, 150, 255)
+ORANGE = (255, 140, 40)
+# Electricity rate tier -> bolt colour. Unknown or unavailable tiers show a dim bolt.
+TIER_COLORS = {
+    "discount": GREEN,
+    "off_peak": BLUE,
+    "on_peak": ORANGE,
+    "critical_peak": RED,
+}
+
+# Gate and bolt x offsets within the home row when the bolt is shown: 9 px gate, 3 px gap, 7 px bolt.
+BOLT_GATE_X = 41
+BOLT_X = 53
 
 HOME_STALE = timedelta(minutes=5)
 WEATHER_STALE = timedelta(hours=3)
@@ -94,16 +107,22 @@ def _count(n: int) -> str:
     return str(min(n, 99))
 
 
-def _icon_count(frame, cell_x, rect, icon, icon_w, icon_color, text, text_color):
+def _icon_count(frame, cell_x, rect, icon, icon_w, icon_color, text, text_color, cell=21):
     width = icon_w + 2 + text_width(text)
-    x = cell_x + max(0, (21 - width) // 2)
+    x = cell_x + max(0, (cell - width) // 2)
     icons.blit(frame, x, rect.y + 1, icon, icon_color)
     draw_text(frame, x + icon_w + 2, rect.y + 3, text, text_color)
 
 
 def draw_home(frame, rect, state: AppState, t: float) -> None:
     home = state.home
-    c0, c1, c2 = rect.x, rect.x + 21, rect.x + 42
+    # With the rate bolt, the lock and bulb (which have digits) get 19 px cells and the
+    # gate and bolt (which do not) sit close together in the remaining 26 px; without
+    # it the row is the original three 21 px cells. Icons and digits keep their size.
+    bolt = home is not None and home.power_tier is not None
+    cell = 19 if bolt else 21
+    c0, c1, c2 = (rect.x + i * cell for i in range(3))
+    gate_x = rect.x + BOLT_GATE_X if bolt else c2 + (21 - 9) // 2
     if home is None:
         for cx in (c0, c1, c2):
             draw_text(frame, cx + 9, rect.y + 3, "--", DIM)
@@ -118,13 +137,13 @@ def draw_home(frame, rect, state: AppState, t: float) -> None:
             text += "?"
         icon_color = color if n else LOCK_OK
         _icon_count(frame, c0, rect, icons.LOCK[n > 0], 7, icon_color, text,
-                    AMBER if (not n and home.locks_unavailable) else color)
+                    AMBER if (not n and home.locks_unavailable) else color, cell)
         # lights
         n = home.lights_on
         _icon_count(frame, c1, rect, icons.BULB, 7, BULB_ON if n else DIM,
-                    _count(n), BULB_ON if n else DIM)
+                    _count(n), BULB_ON if n else DIM, cell)
         # gate
-        gx = c2 + (21 - 9) // 2
+        gx = gate_x
         if home.gates_open:
             on = int(t) % 2 == 0
             icons.blit(frame, gx, rect.y + 1, icons.GATE[True], RED if on else (70, 12, 10))
@@ -132,6 +151,9 @@ def draw_home(frame, rect, state: AppState, t: float) -> None:
             icons.blit(frame, gx, rect.y + 1, icons.GATE[False], AMBER)
         else:
             icons.blit(frame, gx, rect.y + 1, icons.GATE[False], GREEN)
+        if bolt:
+            icons.blit(frame, rect.x + BOLT_X, rect.y + 1, icons.BOLT,
+                       TIER_COLORS.get(home.power_tier, DIM))
     _staleness_dot(frame, rect, state)
 
 

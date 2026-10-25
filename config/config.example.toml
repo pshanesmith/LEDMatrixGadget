@@ -39,3 +39,7 @@ gates = []
 exclude_locks = []
 # fnmatch globs on entity ids
 exclude_lights = ["light.*_rgb_indicator", "light.*_ap_led", "light.*_led"]
+# Optional: a sensor whose state is the electricity rate tier (discount, off_peak, on_peak,
+# critical_peak), e.g. the tier sensor from the ha-duke-tou integration. Adds a coloured
+# lightning bolt to the bottom row. Leave empty for no bolt.
+power_tier_entity = ""

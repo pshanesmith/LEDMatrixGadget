@@ -38,6 +38,7 @@ ENTITY_ID = re.compile(r"^[a-z0-9_]+\.[a-z0-9_]+$")
 # Gate ids are validated against ENTITY_ID before being rendered with json.dumps, so
 # nothing from the config can break out of the Jinja string literals.
 TEMPLATE = """\
+{%- set tier_entity = __TIER__ -%}
 {%- set ns = namespace(locks=[], lights=[]) -%}
 {%- for s in states.lock if s.state != 'locked' -%}
 {%- set ns.locks = ns.locks + [[s.entity_id, s.state]] -%}
@@ -46,7 +47,8 @@ TEMPLATE = """\
 {%- set ns.lights = ns.lights + [s.entity_id] -%}
 {%- endfor -%}
 {{ {"locks": ns.locks, "lights": ns.lights,
-    "gates": __GATES__ | map('states') | list} | tojson }}"""
+    "gates": __GATES__ | map('states') | list,
+    "tier": states(tier_entity) if tier_entity else none} | tojson }}"""
 
 
 class HomeAssistantError(RuntimeError):
@@ -65,11 +67,12 @@ class BadResponseError(HomeAssistantError):
     pass
 
 
-def build_template(gates: tuple[str, ...]) -> str:
-    for gate in gates:
-        if not ENTITY_ID.match(gate):
-            raise ValueError(f"invalid gate entity id: {gate!r}")
-    return TEMPLATE.replace("__GATES__", json.dumps(list(gates)))
+def build_template(gates: tuple[str, ...], tier_entity: str = "") -> str:
+    for entity in (*gates, *([tier_entity] if tier_entity else [])):
+        if not ENTITY_ID.match(entity):
+            raise ValueError(f"invalid entity id: {entity!r}")
+    return (TEMPLATE.replace("__GATES__", json.dumps(list(gates)))
+            .replace("__TIER__", json.dumps(tier_entity)))
 
 
 def _excluded(entity_id: str, patterns: tuple[str, ...]) -> bool:
@@ -96,6 +99,7 @@ def parse_template_result(data: object, config: HomeAssistantConfig,
         lights_on = sum(1 for e in lights if not _excluded(e, config.exclude_lights))
         gates_open = tuple(g for g, s in zip(config.gates, states) if s in GATE_OPEN)
         gates_unavailable = tuple(g for g, s in zip(config.gates, states) if s in UNAVAILABLE)
+        power_tier = str(data.get("tier") or "unknown") if config.power_tier_entity else None  # type: ignore[attr-defined]
     except (KeyError, TypeError, ValueError) as exc:
         raise BadResponseError(f"unexpected template result ({type(exc).__name__})") from None
     return HomeSnapshot(
@@ -105,6 +109,7 @@ def parse_template_result(data: object, config: HomeAssistantConfig,
         lights_on=lights_on,
         gates_open=gates_open,
         gates_unavailable=gates_unavailable,
+        power_tier=power_tier,
     )
 
 
@@ -116,6 +121,7 @@ def snapshot_to_json(snapshot: HomeSnapshot) -> dict:
         "lights_on": snapshot.lights_on,
         "gates_open": list(snapshot.gates_open),
         "gates_unavailable": list(snapshot.gates_unavailable),
+        "power_tier": snapshot.power_tier,
     }
 
 
@@ -127,6 +133,7 @@ def snapshot_from_json(data: dict) -> HomeSnapshot:
         lights_on=int(data["lights_on"]),
         gates_open=tuple(data["gates_open"]),
         gates_unavailable=tuple(data["gates_unavailable"]),
+        power_tier=data.get("power_tier"),
     )
 
 
@@ -163,7 +170,7 @@ class HomeAssistantPoller:
                  timeout: float = TIMEOUT_SECONDS):
         self._config = config
         self._url = normalize_url(config.url)
-        self._template = build_template(config.gates)
+        self._template = build_template(config.gates, config.power_tier_entity)
         self._cache_path = Path(cache_path) if cache_path else None
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._render = render or (lambda u, t, tpl: render_template(u, t, tpl, timeout))

@@ -89,6 +89,10 @@ class HomeSnapshot:
     lights_on: int
     gates_open: tuple[str, ...]         # entity ids of gates that are open
     gates_unavailable: tuple[str, ...]  # gates whose state is unknown
+    # Electricity rate tier from a Home Assistant sensor ("discount", "off_peak", "on_peak",
+    # "critical_peak"). None: not configured, so no bolt is drawn. Anything else the
+    # sensor reports (including "unavailable") is kept and shown as an unknown tier.
+    power_tier: str | None = None
 
 
 @dataclass(frozen=True)

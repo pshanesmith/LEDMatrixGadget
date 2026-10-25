@@ -1,6 +1,6 @@
 """Pixel-art icons. Each is a tuple of rows; characters index a palette, '.' is clear.
 
-Weather icons are 9x9, lock and bulb 7x9, gate 9x9.
+Weather icons are 9x9, lock, bulb and bolt 7x9, gate 9x9.
 """
 from PIL import Image
 
@@ -138,6 +138,17 @@ BULB = (
     "..###..",
     "..###..",
     "...#...",
+)
+BOLT = (
+    "....###",
+    "...###.",
+    "..###..",
+    ".######",
+    "....##.",
+    "...##..",
+    "..##...",
+    ".##....",
+    ".#.....",
 )
 _GATE_CLOSED = (
     "#.......#",

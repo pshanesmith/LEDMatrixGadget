@@ -21,7 +21,7 @@ Everyday commands (the service is `matrix-display`).
 ## Changing settings
 - **Edit `/etc/matrix/config.toml`** (a copy; the repo's `config/config.toml` is only the source used at install time), then `reload`.
 - **Location:** `python3 tools/geocode.py <ZIP>` updates `config/config.toml`; copy the `[location]` section into `/etc/matrix/config.toml`.
-- **Gates, lights, locks:** `python3 tools/ha-discover.py --toml` lists entities and prints a snippet for `[homeassistant]`. `exclude_lights` takes glob patterns on entity ids.
+- **Gates, lights, locks:** `python3 tools/ha-discover.py --toml` lists entities and prints a snippet for `[homeassistant]`. `exclude_lights` takes glob patterns on entity ids. `power_tier_entity` (a sensor reporting `discount`, `off_peak`, `on_peak` or `critical_peak`) adds the rate bolt to the bottom row.
 - **Home Assistant URL** defaults to `http://homeassistant:8123`; change `[homeassistant].url`, or set `MATRIX_HA_URL` in `/etc/matrix/secrets.env`.
 - **Token:** only in `/etc/matrix/secrets.env` (`MATRIX_HA_TOKEN=`, mode 600, root). If it leaks, delete it in Home Assistant (profile > Security) and create a new one.
 - **Brightness:** `[display] brightness` (day) and `max_brightness` (hard ceiling, 70). After sunset the display is halved automatically. The supply is rated 4 A; do not raise the ceiling much.

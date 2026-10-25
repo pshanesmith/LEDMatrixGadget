@@ -56,6 +56,7 @@ class HomeAssistantConfig:
     gates: tuple[str, ...] = ()
     exclude_locks: tuple[str, ...] = ()      # fnmatch globs on entity ids
     exclude_lights: tuple[str, ...] = ()
+    power_tier_entity: str = ""              # sensor with the rate tier; empty hides the bolt
 
 
 @dataclass(frozen=True)
