@@ -25,7 +25,7 @@ def with_weather(state, **cur):
 def test_every_sample_renders_and_animates(name):
     state = sample_state(name)
     a, b = render_state(state, 0.0), render_state(state, 2.5)
-    assert a.size == (64, 28) and a.mode == "RGB"
+    assert a.size == (64, 35) and a.mode == "RGB"
     if name not in ("clear_day", "overcast"):          # those drift only slightly or not visibly
         assert ImageChops.difference(a, b).getbbox() is not None
     assert len(set(a.getdata())) > 12                   # not a flat fill
@@ -49,7 +49,6 @@ def test_draw_scene_stays_inside_rect():
     ref = blank()
     ref.paste(frame.crop((0, layout.SCENE.y, 64, layout.SCENE.y2)), (0, layout.SCENE.y))
     assert ImageChops.difference(frame, ref).getbbox() is None
-    assert frame.crop((0, 0, 64, layout.SCENE.y)).getcolors() == [(64 * layout.SCENE.y, (1, 2, 3))]
     assert frame.crop((0, layout.SCENE.y2, 64, 64)).getcolors() == [(64 * (64 - layout.SCENE.y2), (1, 2, 3))]
 
 
@@ -62,8 +61,8 @@ def test_no_weather_draws_dim_neutral_scene():
 
 
 def test_day_is_brighter_than_night():
-    day = render_state(sample_state("clear_day"), 0.0).crop((0, 0, 40, 6))
-    night = render_state(sample_state("clear_night"), 0.0).crop((0, 0, 40, 6))
+    day = render_state(sample_state("clear_day"), 0.0).crop((0, 8, 40, 14))
+    night = render_state(sample_state("clear_night"), 0.0).crop((0, 8, 40, 14))
     avg = lambda im: sum(sum(p) for p in im.getdata())  # noqa: E731
     assert avg(day) > 3 * avg(night)
 
@@ -98,8 +97,8 @@ def test_sunrise_and_sunset_follow_the_clock():
 
 
 def test_ridges_are_fixed_between_runs():
-    a, _ = mountains.terrain(40, Condition.CLEAR)
-    assert list(a.getdata()) == list(mountains.terrain.__wrapped__(40, Condition.CLEAR)[0].getdata())
+    a, _ = mountains.terrain(40, Condition.CLEAR, 70)
+    assert list(a.getdata()) == list(mountains.terrain.__wrapped__(40, Condition.CLEAR, 70)[0].getdata())
 
 
 def test_lightning_is_deterministic_and_occasional():
@@ -136,3 +135,30 @@ def test_frame_cost_is_low():
         render_state(state, i / 15)
     per_frame = (time.perf_counter() - t0) / 30
     assert per_frame < 0.02
+
+
+def test_date_overlay_is_top_left_and_readable_day_and_night():
+    for name in ("clear_day", "clear_night"):
+        img = render_state(sample_state(name), 0.0)
+        box = img.crop((0, 0, 36, 8)).point(lambda v: 255 if v > 240 else 0).convert("L").getbbox()
+        assert box is not None and box[0] >= 1 and box[1] >= 1, name     # white text, 1 px margin
+        corner = img.crop((0, 0, 1, 1)).getpixel((0, 0))
+        assert max(corner) < 200, name                                   # outline darkens the sky
+
+
+def test_date_changes_with_the_day():
+    s = sample_state("clear_day")
+    other = s.__class__(now=s.now + timedelta(days=1), weather=s.weather, home=s.home)
+    box = ImageChops.difference(render_state(s, 0.0), render_state(other, 0.0)).getbbox()
+    assert box is not None and box[0] < 40 and box[3] <= 8
+
+
+def test_ridge_colours_follow_the_season():
+    def avg(doy):
+        rgb, mask = mountains.terrain(40, Condition.CLEAR, mountains.season_key(doy))
+        px = [p for p, m in zip(rgb.getdata(), mask.getdata()) if m]
+        return [sum(c[i] for c in px) / len(px) for i in range(3)]
+    summer, october, winter = avg(190), avg(293), avg(15)
+    assert summer[1] > summer[0] * 1.15                     # green dominates in summer
+    assert october[0] > summer[0] + 20                      # reds and oranges in October
+    assert abs(winter[1] - winter[0]) < 25                  # bare browns and greys in winter

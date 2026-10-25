@@ -20,14 +20,12 @@ class Rect(NamedTuple):
         return self.y + self.h
 
 
-DATE = Rect(0, 0, 64, 7)
-SCENE = Rect(0, 7, 64, 28)
+SCENE = Rect(0, 0, 64, 35)      # the date and temperature are overlaid on it
 TEMPS = Rect(0, 35, 64, 8)
 NEXT_CHANGE = Rect(0, 43, 64, 10)
 HOME = Rect(0, 53, 64, 11)
 
 REGIONS = {
-    "date": DATE,
     "scene": SCENE,
     "temps": TEMPS,
     "next_change": NEXT_CHANGE,

@@ -36,9 +36,8 @@ The whole frame is composed with Pillow in an RGB image and pushed to the panel 
 
 ```
 y=0  +----------------------------------------------------------+
-     | SAT 10/24                          (date)          7 rows |
-y=7  +----------------------------------------------------------+
-     |   animated mountain scene, 64 x 28; temperature top right |
+     | SAT 10/24 (date overlay)          61 (temperature)       |
+     |   animated Blue Ridge scene, 64 x 35, behind both labels |
      |   sky + sun/moon/stars + clouds + mountains + weather FX |
 y=35 +----------------------------------------------------------+
      | v40  ^56    low (cool blue), high (warm orange)    8 rows |
@@ -50,7 +49,7 @@ y=63 +----------------------------------------------------------+
 ```
 
 - **Fonts and icons:** an own 5-row proportional bitmap font defined in code (upper case, digits, `/ : . - + ?` and arrows) and palette-character icons, so there are no font files or antialiasing. The temperature in the scene uses built-in 3x5 digits.
-- **Date:** weekday and month/day (`SAT 10/24`), recomputed every frame from the forecast location's local time.
+- **Date:** weekday and month/day (`SAT 10/24`) overlaid at the scene's top left with the same white-on-dark-outline treatment and 1 px margin as the temperature, so it reads over day and night skies; recomputed every frame from the forecast location's local time.
 - **Temperature row:** low and high from the day's forecast, centred in each half so `-12` and `105` fit.
 - **Next change:** the first forecast hour within 24 h whose condition category differs from the current one, shown as the new condition's 9x9 icon and the hour (`6P`, `11A`). If nothing changes, `STEADY 24H` with the current condition's icon. A clear sky is drawn as a moon between sunset and sunrise.
 - **Home Assistant row:** three cells about 21 px wide. Lock: count of locks that are unlocked, jammed or in motion (red when nonzero, dim at zero, an amber `?` if a lock is offline). Bulb: room lights on. Gate: green when closed, slowly blinking red when any configured gate is open, amber when its state is unknown. Counts clamp at 99.
@@ -64,7 +63,7 @@ Procedural pixel art with no image assets. Layers, back to front:
 1. **Sky:** vertical gradient from sun elevation (sunrise and sunset come from the forecast) and cloud cover; dark navy with stars at night.
 2. **Sun or moon:** the sun moves along an arc between sunrise and sunset; the moon follows the date's phase. Both fade under heavy cloud.
 3. **Clouds:** drifting sprites scaled by cloud cover and wind; overcast and precipitation use wrap-around cloud decks.
-4. **Mountains:** two or three parallax ridges with snow caps and pine silhouettes, from seeded shapes so the skyline never changes.
+4. **Mountains:** three parallax Blue Ridge-style ridges (rounded, forested, fading to blue haze in the distance) and pine silhouettes, from seeded shapes so the skyline never changes. Foliage is a seeded per-pixel mix of tree colours whose proportions follow the day of the year (green in summer; red, orange, yellow and green in October; brown and bare in winter; fresh greens and blossom in spring). Snow only dusts the crests while it is snowing.
 5. **Weather effects:** per condition.
 
 | Condition | WMO codes (Open-Meteo) | Effect |

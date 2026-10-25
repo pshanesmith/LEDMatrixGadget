@@ -24,6 +24,7 @@ _SHAPES = (
     (14, 6, [(4, 4, 3, 3), (8, 3, 4, 3), (11, 4, 3, 3), (7, 5, 6, 2)]),
     (24, 8, [(5, 6, 4, 3), (10, 4, 5, 4), (16, 5, 5, 4), (20, 6, 3, 3), (12, 7, 10, 3)]),
 )
+CLOUD_DROP = 4        # the sky is taller than it was; keep the clouds off the date row
 # (shape, y, x0, speed px/s)
 _DRIFTERS = ((0, 3, 4, 2.0), (2, 9, 40, 1.4), (1, 6, 22, 2.6), (0, 12, 58, 1.7),
              (1, 2, 50, 2.2), (2, 5, 8, 1.2), (1, 10, 30, 2.9))
@@ -78,7 +79,7 @@ def draw_drifters(img: Image.Image, eq: int, cond: Condition, count: int, wind: 
         rgb, mask = sheet[shape]
         span = W + rgb.width
         x = round((x0 + speed * wf * t) % span) - rgb.width
-        img.paste(rgb, (x, y), mask)
+        img.paste(rgb, (x, y + CLOUD_DROP), mask)
 
 
 @lru_cache(maxsize=32)

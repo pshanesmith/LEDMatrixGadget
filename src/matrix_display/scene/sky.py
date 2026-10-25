@@ -9,8 +9,8 @@ from PIL import Image, ImageDraw
 from ..state import Condition
 from .palette import GRAY_MIX, H, RGB, W, clamp, gray_of, lerp, light_level, scale, sky_colors
 
-HORIZON = 21          # sun/moon centre sits here at sunrise/sunset
-PEAK = 6              # and here at its highest
+HORIZON = 28          # sun/moon centre sits here at sunrise/sunset
+PEAK = 11             # and here at its highest
 
 
 @lru_cache(maxsize=96)
@@ -36,7 +36,7 @@ def sky_image(eq: int, cond: Condition | None) -> Image.Image:
 @lru_cache(maxsize=1)
 def _stars() -> tuple[tuple[int, int, float, float], ...]:
     rng = random.Random(1717)
-    return tuple((rng.randrange(W), rng.randrange(0, 15), rng.uniform(0.5, 1.0),
+    return tuple((rng.randrange(W), rng.randrange(0, 22), rng.uniform(0.5, 1.0),
                   rng.uniform(0, 6.28)) for _ in range(26))
 
 
@@ -65,7 +65,7 @@ def draw_shooting_star(img: Image.Image, visibility: float, t: float) -> None:
     if local > SHOOTING_LENGTH:
         return
     rng = random.Random(int(cycle) * 7919 + 13)
-    x0, y0 = rng.uniform(6, 40), rng.uniform(1, 8)
+    x0, y0 = rng.uniform(6, 40), rng.uniform(1, 12)
     dx, dy = 30.0 * rng.choice((1, 1, -1)), rng.uniform(7, 13)
     if dx < 0:
         x0 += 20
