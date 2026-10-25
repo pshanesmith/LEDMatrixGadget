@@ -175,7 +175,11 @@ def terrain(eq: int, cond: Condition | None, season: int,
     fog_col = lerp((26, 30, 44), (190, 196, 206), light)
     snow = _shade(_SNOW[0], _SNOW[1], light, tw, 0.4)
     n = len(ridges)
-    mean = lerp(tuple(round(sum(c[k] * w for c, w in weights)) for k in range(3)), (204, 82, 30), 0.5)
+    warm = sum(w for c, w in weights if c in (_TREES["yellow"], _TREES["orange"], _TREES["red"]))
+    mean = lerp(tuple(round(sum(c[k] * w for c, w in weights)) for k in range(3)),
+                (204, 82, 30), min(0.5, warm * 0.7))      # hillsides glow russet only in the fall
+    bare = sum(w for c, w in weights if c in (_TREES["brown"], _TREES["bare"]))
+    leaf_loss = clamp((bare - 0.3) / 0.6) * 0.85           # how many leaves have dropped
     ramp = n - 1 if n > 1 else 1
 
     def tone(i: int, foliage: RGB | None, fol: float) -> RGB:
@@ -229,6 +233,8 @@ def terrain(eq: int, cond: Condition | None, season: int,
         draw.line([(bx - 1, cb - 2), (bx - 1, H)], fill=scale(bark, 1.3) + (255,))
         draw.point([(bx + 1, y) for y in range(cb + 2, H)], fill=scale(bark, 0.7) + (255,))
         for (dx, dy), (c, pick) in leaves.items():
+            if ((dx * 73856093 ^ dy * 19349663 ^ k * 83492791) % 100) / 100 < leaf_loss:
+                continue                                        # bare branches show through
             leaf = tone(n, _foliage(pick, leaves_pal), 0.95)
             shade = {"h": 1.4, "m": 1.0, "d": 0.6, "x": 0.4, "s": 1.14}[c]
             draw.point([(ox + dx, oy + dy)], fill=scale(leaf, shade) + (255,))
