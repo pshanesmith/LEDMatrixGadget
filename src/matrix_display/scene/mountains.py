@@ -32,7 +32,7 @@ _PINES_X = (2, 7, 12, 16, 21, 44, 49, 53, 58, 62)
 _PINES_KEPT = (3, 4, 6)         # indices into _PINES_X that stay evergreen (x = 16, 21, 49)
 # Large foreground trees: (trunk x, crown width, crown height, crown bottom y, colour pick)
 _BIG_TREES = ((6, 22, 20, 32, 0.66), (57, 19, 18, 33, 0.93), (41, 13, 12, 34, 0.4))
-_PINE_WIDTHS = (1, 3, 3, 5, 5, 7, 7, 9)
+_PINE_WIDTHS = (1, 3, 3, 5, 5, 5, 7, 7, 7, 9, 9)
 _PINE_BASE = 34
 
 # Foliage colours, in the order a hillside's weights are applied.
@@ -103,7 +103,7 @@ def _shapes(style: str):
     for base, peaks, fol in STYLES[style][0]:
         tops = _profile(rng, base, peaks)
         ridges.append((tops, fol))
-    pines = [(x, rng.randint(5, 8), _PINE_BASE + rng.randint(0, 1)) for x in _PINES_X]
+    pines = [(x, rng.randint(9, 12), _PINE_BASE + rng.randint(0, 1)) for x in _PINES_X]
     pines = [pines[k] for k in _PINES_KEPT]
     return ridges, pines
 
