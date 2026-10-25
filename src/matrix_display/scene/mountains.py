@@ -42,6 +42,7 @@ STYLES = {
 }
 STYLE = "layered"
 _PINES_X = (2, 7, 12, 16, 21, 44, 49, 53, 58, 62)
+_PINES_KEPT = (1, 3, 6, 8)      # indices into _PINES_X that stay evergreen
 _PINE_WIDTHS = (1, 3, 3, 5, 5, 7, 7, 9)
 _PINE_BASE = 34
 
@@ -123,6 +124,11 @@ def _shapes(style: str):
         for k, x in enumerate(range(-2 + 3 * row, W + 3, step)):
             blobs.append((x, cy + rng.randint(-1, 2), rng.randint(3, rmax),
                           (k * 0.37 + row * 0.5 + rng.random() * 0.25) % 1, bright))
+    for k, (x, h, base) in list(enumerate(pines)):
+        if k not in _PINES_KEPT:               # the rest become deciduous trees that turn with the season
+            r = rng.randint(4, 5)
+            blobs.append((x, 34 - r + rng.randint(-1, 0), r, rng.uniform(0.4, 1.0), 1.0))
+    pines = [pines[k] for k in _PINES_KEPT]
     return ridges, pines, blobs
 
 
