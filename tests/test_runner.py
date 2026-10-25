@@ -1,5 +1,6 @@
 import os
 import socket
+import sys
 import threading
 
 import pytest
@@ -117,6 +118,7 @@ def test_reload_swaps_config_and_survives_errors():
     assert runner.cfg.display.scene_fps == 10
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="systemd notify socket is Pi/Linux only")
 def test_sd_notify_noop_without_socket_and_works_with_one(tmp_path, monkeypatch):
     monkeypatch.delenv("NOTIFY_SOCKET", raising=False)
     sd_notify("READY=1")                                         # must not raise
