@@ -74,8 +74,8 @@ def _season(state: AppState) -> int:
 
 
 def _overlay(img: Image.Image, glyph: Image.Image, outline: Image.Image, x: int) -> None:
-    img.paste((0, 0, 0), (x, 0), outline)
-    img.paste((255, 255, 255), (x, 0), glyph)
+    img.paste((0, 0, 0), (x, EDGE_MARGIN), outline)
+    img.paste((255, 255, 255), (x, EDGE_MARGIN), glyph)
 
 
 def _paste_text(img: Image.Image, text: str) -> None:
