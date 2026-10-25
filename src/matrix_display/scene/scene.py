@@ -12,6 +12,9 @@ _NEUTRAL_EQ = -6
 _PRECIP_SKY = (Condition.OVERCAST, Condition.FOG, Condition.RAIN, Condition.SNOW, Condition.THUNDER)
 
 
+EDGE_MARGIN = 1     # pixels between the date/temperature text and the panel edge
+
+
 def render_state(state: AppState, t: float) -> Image.Image:
     """One 64x28 frame. A pure function of (state, t)."""
     weather = state.weather
@@ -77,14 +80,14 @@ def _overlay(img: Image.Image, glyph: Image.Image, outline: Image.Image, x: int)
 
 def _paste_text(img: Image.Image, text: str) -> None:
     glyph, outline = digits.text_masks(text)
-    _overlay(img, glyph, outline, W - glyph.width)
+    _overlay(img, glyph, outline, W - glyph.width - EDGE_MARGIN)
 
 
 def _paste_date(img: Image.Image, state: AppState) -> None:
     """Weekday and month/day at the top left, mirroring the temperature's margin."""
     now = state.now
     glyph, outline = digits.date_masks(f"{now:%a} {now.month}/{now.day}".upper())
-    _overlay(img, glyph, outline, 0)
+    _overlay(img, glyph, outline, EDGE_MARGIN)
 
 
 class SceneRenderer:
