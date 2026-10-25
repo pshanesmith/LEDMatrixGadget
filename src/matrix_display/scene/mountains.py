@@ -58,6 +58,7 @@ _PINE = ((14, 44, 32), (4, 10, 12))
 _FOG_AMOUNT = (0.6, 0.5, 0.4, 0.3, 0.2)
 _PINE_NIGHT = (7, 12, 20)
 SEASON_STEP = 4                   # days per terrain cache entry
+_LEAF_SHADE = {"h": 1.4, "m": 1.0, "d": 0.6, "x": 0.4, "s": 1.14}
 
 
 def season_key(doy: int) -> int:
@@ -196,22 +197,25 @@ def terrain(eq: int, cond: Condition | None, season: int,
 
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
+    px = img.load()
 
+    # Colours are worked out once per ridge and once per leaf colour, not per pixel: a cache
+    # miss here (the sun moving a step, a new season) stalls the frame it happens in.
     for i, (tops, fol) in enumerate(ridges):
-        base_col = tone(i, None, 0)
+        base_col = tone(i, mean, fol) if fol else tone(i, None, 0)
         for x in range(W):
             top = tops[x]
             ahead = tops[min(W - 1, x + 3)]
             face = 0.88 if ahead < top - 1 else 1.0   # slopes rising to the right sit in shade
             for y in range(max(top, 0), H):
                 depth = clamp((y - top) / 12)
-                col = tone(i, mean, fol) if fol else base_col
+                col = base_col
                 if fol and y - top < 1:
                     col = scale(col, 1.12)               # lit crest
                 col = scale(col, face * (1 - 0.22 * depth))
                 if snowing and y - top < 2 + (x + y) % 2:   # a dusting on the crests
                     col = lerp(col, scale(snow, face * 0.92 + 0.08), 0.85)
-                img.putpixel((x, y), col + (255,))
+                px[x, y] = col + (255,)
 
     pine = lerp(_PINE_NIGHT, _PINE[0], light)
     pine = lerp(pine, gray_of(pine), g)
@@ -225,6 +229,7 @@ def terrain(eq: int, cond: Condition | None, season: int,
         draw.point([(x, base + 1)], fill=scale(pine, 0.7) + (255,))
     dull = tone(n, _TREES["brown"], 0.95)
     mute = clamp(leaf_loss / 0.85) * 0.85
+    leaf_cols: dict[RGB, RGB] = {}
     for k, (bx, cw, ch, cb, v) in enumerate(_BIG_TREES):       # foreground trees, drawn last
         leaves, branches = _big_tree(cw, ch, 100 + k, v)
         ox, oy = bx - cw // 2, cb - ch
@@ -237,7 +242,11 @@ def terrain(eq: int, cond: Condition | None, season: int,
         for (dx, dy), (c, pick) in leaves.items():
             if ((dx * 73856093 ^ dy * 19349663 ^ k * 83492791) % 100) / 100 < leaf_loss:
                 continue                                        # bare branches show through
-            leaf = lerp(tone(n, _foliage(pick, leaves_pal), 0.95), dull, mute)   # late leaves fade to brown
-            shade = {"h": 1.4, "m": 1.0, "d": 0.6, "x": 0.4, "s": 1.14}[c]
-            draw.point([(ox + dx, oy + dy)], fill=scale(leaf, shade) + (255,))
+            foliage = _foliage(pick, leaves_pal)
+            leaf = leaf_cols.get(foliage)
+            if leaf is None:                                    # late leaves fade to brown
+                leaf = leaf_cols[foliage] = lerp(tone(n, foliage, 0.95), dull, mute)
+            x, y = ox + dx, oy + dy
+            if 0 <= x < W and 0 <= y < H:
+                px[x, y] = scale(leaf, _LEAF_SHADE[c]) + (255,)
     return img.convert("RGB"), img.getchannel("A")
