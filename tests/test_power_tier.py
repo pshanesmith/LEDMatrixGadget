@@ -131,3 +131,31 @@ def test_bolt_row_stays_inside_the_region(count, t):
     ref = build_default_compositor(include_scene=False).render(empty, t)
     above = (0, 0, 64, layout.HOME.y)
     assert img.crop(above).tobytes() == ref.crop(above).tobytes()
+
+
+# --- maintenance dot ---------------------------------------------------------
+
+
+def test_pending_updates_are_counted_after_exclusions():
+    cfg = config(exclude_updates=("update.*_firmware",))
+    data = payload(updates=["update.core", "update.hub_firmware", "update.addon"])
+    assert ha.parse_template_result(data, cfg).updates_pending == 2
+    assert ha.parse_template_result(payload(), cfg).updates_pending == 0
+
+
+def test_updates_survive_the_cache_and_old_caches_load():
+    snap = ha.parse_template_result(payload(updates=["update.core"]), config())
+    data = ha.snapshot_to_json(snap)
+    assert ha.snapshot_from_json(data).updates_pending == 1
+    del data["updates_pending"]
+    assert ha.snapshot_from_json(data).updates_pending == 0
+
+
+def test_maintenance_dot_is_yellow_beside_the_corner():
+    from PIL import Image
+    state = variants()["updates_pending"]
+    for st, expect in ((state, widgets.YELLOW),
+                       (replace(state, home=replace(state.home, updates_pending=0)), (0, 0, 0))):
+        frame = Image.new("RGB", (64, 64))
+        widgets.draw_home(frame, layout.HOME, st, 0.0)
+        assert frame.getpixel((62, 63)) == expect

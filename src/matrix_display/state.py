@@ -93,6 +93,8 @@ class HomeSnapshot:
     # "critical_peak"). None: not configured, so no bolt is drawn. Anything else the
     # sensor reports (including "unavailable") is kept and shown as an unknown tier.
     power_tier: str | None = None
+    # Home Assistant `update.*` entities that are `on` (an update is waiting to be installed).
+    updates_pending: int = 0
 
 
 @dataclass(frozen=True)
