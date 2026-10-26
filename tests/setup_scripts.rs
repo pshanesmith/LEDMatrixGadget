@@ -65,7 +65,8 @@ mod boot {
         std::fs::write(&f, SAMPLE).unwrap();
         run_update(&f, 0);
         let first = std::fs::read_to_string(&f).unwrap();
-        assert!(first.contains("#matrix-setup# dtparam=audio=on"));
+        assert!(first.contains("#matrix-setup# dtparam=audio=on"), "config.txt after the update:\n{first}\nawk: {:?}",
+                Command::new("awk").arg("--version").output().map(|o| String::from_utf8_lossy(&o.stdout).to_string()));
         assert!(first.contains("#matrix-setup# dtoverlay=vc4-kms-v3d"));
         assert!(first.contains("arm_boost=1") && first.contains("dtoverlay=nospi10")); // untouched
         assert!(first.trim_end().ends_with("# END matrix-setup:power"));
