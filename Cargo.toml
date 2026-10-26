@@ -54,11 +54,9 @@ serde_json = "1"
 signal-hook = "0.3"
 toml = "0.8"
 ureq = { version = "2", features = ["json"] }
-rpi-led-panel = { version = "0.9", default-features = false, optional = true }
-
-# A patched copy of the panel driver: see vendor/rpi-led-panel/PATCHES.md.
-[patch.crates-io]
-rpi-led-panel = { path = "vendor/rpi-led-panel" }
+# Our fork of EmbersArc/rpi_led_panel 0.9.1 with one fix: the system timer was read with an unaligned 64-bit load,
+# which raises SIGBUS on 64-bit Raspberry Pi OS. Pinned to the commit; drop the fork once upstream has the fix.
+rpi-led-panel = { git = "https://github.com/pshanesmith/rpi_led_panel", rev = "f59a8f2af147c1a3873c7145fee79e2882081701", default-features = false, optional = true }
 
 [dev-dependencies]
 tempfile = "3"
