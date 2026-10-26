@@ -27,9 +27,9 @@ source "$HERE/lib/common.sh"
 BOOT_DIR=${BOOT_DIR:-/boot/firmware}
 ISOLCPUS=1; REBUILD=0; ASSUME_YES=0; ONLY=""; SKIP=""
 ALL_STEPS=(deps build boot verify)
-# build-essential: a C compiler for the TLS library's C parts; cargo and rustc come from Debian (Rust 1.85
-# on Debian 13, which is the minimum the project needs).
-DEPS=(git build-essential cargo rustc)
+# gcc is the linker rustc calls and compiles the TLS library's C parts (no g++ or make: the panel driver is
+# pure Rust); cargo and rustc come from Debian (Rust 1.85 on Debian 13, the minimum the project needs).
+DEPS=(gcc libc6-dev cargo rustc)
 # hzeller's recommendation for reserving core 3 for the refresh thread.
 CMDLINE_TOKENS=("isolcpus=domain,managed_irq,3" "nohz_full=3" "rcu_nocbs=3" "irqaffinity=0,1,2")
 

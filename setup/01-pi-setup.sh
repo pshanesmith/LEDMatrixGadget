@@ -59,8 +59,8 @@ PURGE_AGGRESSIVE=(
   rpi-usb-gadget                                           # USB gadget (Ethernet over USB) mode
 )
 # apt must never remove any of these (or anything matching), or the run aborts.
-PROTECT_RE='^(openssh-.*|ssh|network-manager|wpasupplicant|firmware-brcm80211|raspi-firmware|raspi-config|raspi-utils|raspberrypi-.*|userconf-pi|avahi-daemon|sudo|systemd.*|libsystemd.*|dbus.*|udev|libc6|apt|dpkg|bash|coreutils|login|passwd|initramfs-tools|linux-image-rpi-v8|linux-image-[0-9].*-rpi-v8|python3|python3-minimal|python3-venv|python3-pip|python3-dev|python3-setuptools|python3-gpiozero|python3-rpi-lgpio|python3-libgpiod|python3-spidev|python3-smbus2|build-essential|cargo|rustc|libstd-rust-.*|rustc-.*|gcc|gcc-[0-9]+|gcc-[0-9]+-aarch64-linux-gnu|g\+\+|g\+\+-[0-9]+|cpp|libc6-dev|make|git|curl|ca-certificates|cron|iproute2|iputils-ping|nftables|rsync|dhcpcd-base|base-files|netbase|init|kmod|sed|grep|tar|gzip|libnss-.*|libpam.*)$'
-DEPS=(git build-essential cargo rustc)   # to build the display from source (see 02-matrix-setup.sh)
+PROTECT_RE='^(openssh-.*|ssh|network-manager|wpasupplicant|firmware-brcm80211|raspi-firmware|raspi-config|raspi-utils|raspberrypi-.*|userconf-pi|avahi-daemon|sudo|systemd.*|libsystemd.*|dbus.*|udev|libc6|apt|dpkg|bash|coreutils|login|passwd|initramfs-tools|linux-image-rpi-v8|linux-image-[0-9].*-rpi-v8|python3|python3-minimal|python3-gpiozero|python3-rpi-lgpio|python3-libgpiod|python3-spidev|python3-smbus2|build-essential|cargo|rustc|libstd-rust-.*|rustc-.*|gcc|gcc-[0-9]+|gcc-[0-9]+-aarch64-linux-gnu|g\+\+|g\+\+-[0-9]+|cpp|libc6-dev|make|git|curl|ca-certificates|cron|iproute2|iputils-ping|nftables|rsync|dhcpcd-base|base-files|netbase|init|kmod|sed|grep|tar|gzip|libnss-.*|libpam.*)$'
+DEPS=(git)   # to fetch the repository; the build tools are installed by 02-matrix-setup.sh only if you compile on the Pi
 
 # Lines in config.txt that conflict with the power block below get commented out.
 BOOT_BLOCK='dtoverlay=disable-bt
