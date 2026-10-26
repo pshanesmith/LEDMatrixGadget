@@ -319,6 +319,7 @@ pub fn terrain(eq: i32, cond: Option<Condition>, season_k: i32) -> Rc<(Img, Mask
 fn build_terrain(eq: i32, cond: Option<Condition>, season_k: i32) -> (Img, Mask) {
     let elev = eq as f64 / 40.0;
     let (light, tw) = (light_level(elev), twilight(elev));
+    let dusk = tw * (1.0 - light * 0.5);
     let g = gray_mix(cond) * 0.7;
     let snowing = cond == Some(Condition::Snow);
     let shapes = shapes();
@@ -359,7 +360,10 @@ fn build_terrain(eq: i32, cond: Option<Condition>, season_k: i32) -> (Img, Mask)
                 day = lerp(day, scale(f, 0.6 + 0.4 * fol), fol);
             }
         }
-        let mut col = shade_mix(day, NIGHTS[k], light, tw, 0.15 + 0.1 * (i as f64 / ramp));
+        let mut col = shade_mix(day, NIGHTS[k], light, tw, 0.05 + 0.05 * (i as f64 / ramp));
+        // against the bright dusk sky the hills read as dark silhouettes, nearer ones darkest
+        let dark = if fol == 0.0 { 0.25 + 0.2 * (i as f64 / ramp) } else { 0.12 };
+        col = scale(col, 1.0 - dusk * dark);
         col = lerp(col, gray_of(col), g);
         if cond == Some(Condition::Fog) {
             col = lerp(col, fog_col, FOG_AMOUNT[i.min(4)]);
@@ -394,7 +398,7 @@ fn build_terrain(eq: i32, cond: Option<Condition>, season_k: i32) -> (Img, Mask)
     }
 
     let mut pine = lerp(PINE_NIGHT, PINE[0], light);
-    pine = lerp(pine, gray_of(pine), g);
+    pine = scale(lerp(pine, gray_of(pine), g), 1.0 - dusk * 0.4);
     let tip = shade_mix(SNOW[0], SNOW[1], light, tw, 0.3);
     for &(x, h, base) in &shapes.pines {
         for r in 0..h {
@@ -413,7 +417,7 @@ fn build_terrain(eq: i32, cond: Option<Condition>, season_k: i32) -> (Img, Mask)
         // foreground trees, drawn last
         let tree = big_tree(cw, ch, 100 + k as u64, v);
         let (ox, oy) = (bx - cw / 2, cb - ch);
-        let bark = lerp([14, 11, 12], [92, 66, 48], light);
+        let bark = scale(lerp([14, 11, 12], [92, 66, 48], light), 1.0 - dusk * 0.4);
         for &((x0, y0), (x1, y1)) in &tree.branches {
             // trunk and the limbs in the crown
             layer.line(
