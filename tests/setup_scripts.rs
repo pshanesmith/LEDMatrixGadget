@@ -34,18 +34,18 @@ mod boot {
         out
     }
 
-    const SAMPLE: &str = "# header
-    dtparam=audio=on
-    camera_auto_detect=1
-    dtoverlay=vc4-kms-v3d
-    max_framebuffers=2
-    arm_boost=1
-    [cm4]
-    otg_mode=1
-    [pi5]
-    dtoverlay=nospi10
-    [all]
-    ";
+    // `\n\` continues the literal and drops the next line's indentation, so the data stays as written.
+    const SAMPLE: &str = "# header\n\
+        dtparam=audio=on\n\
+        camera_auto_detect=1\n\
+        dtoverlay=vc4-kms-v3d\n\
+        max_framebuffers=2\n\
+        arm_boost=1\n\
+        [cm4]\n\
+        otg_mode=1\n\
+        [pi5]\n\
+        dtoverlay=nospi10\n\
+        [all]\n";
     const BLOCK: &str = "dtoverlay=disable-bt\ndtparam=audio=off";
     const REGEX: &str = "dtparam=audio=|camera_auto_detect=|dtoverlay=vc4-kms-v3d|max_framebuffers=|dtoverlay=disable-bt";
 
@@ -65,8 +65,7 @@ mod boot {
         std::fs::write(&f, SAMPLE).unwrap();
         run_update(&f, 0);
         let first = std::fs::read_to_string(&f).unwrap();
-        assert!(first.contains("#matrix-setup# dtparam=audio=on"), "config.txt after the update:\n{first}\nawk: {:?}",
-                Command::new("awk").arg("--version").output().map(|o| String::from_utf8_lossy(&o.stdout).to_string()));
+        assert!(first.contains("#matrix-setup# dtparam=audio=on"), "config.txt after the update:\n{first}");
         assert!(first.contains("#matrix-setup# dtoverlay=vc4-kms-v3d"));
         assert!(first.contains("arm_boost=1") && first.contains("dtoverlay=nospi10")); // untouched
         assert!(first.trim_end().ends_with("# END matrix-setup:power"));
