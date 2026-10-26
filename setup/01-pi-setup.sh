@@ -60,7 +60,6 @@ PURGE_AGGRESSIVE=(
 )
 # apt must never remove any of these (or anything matching), or the run aborts.
 PROTECT_RE='^(openssh-.*|ssh|network-manager|wpasupplicant|firmware-brcm80211|raspi-firmware|raspi-config|raspi-utils|raspberrypi-.*|userconf-pi|avahi-daemon|sudo|systemd.*|libsystemd.*|dbus.*|udev|libc6|apt|dpkg|bash|coreutils|login|passwd|initramfs-tools|linux-image-rpi-v8|linux-image-[0-9].*-rpi-v8|python3|python3-minimal|python3-gpiozero|python3-rpi-lgpio|python3-libgpiod|python3-spidev|python3-smbus2|build-essential|cargo|rustc|libstd-rust-.*|rustc-.*|gcc|gcc-[0-9]+|gcc-[0-9]+-aarch64-linux-gnu|g\+\+|g\+\+-[0-9]+|cpp|libc6-dev|make|git|curl|ca-certificates|cron|iproute2|iputils-ping|nftables|rsync|dhcpcd-base|base-files|netbase|init|kmod|sed|grep|tar|gzip|libnss-.*|libpam.*)$'
-DEPS=(git)   # to fetch the repository; the build tools are installed by 02-matrix-setup.sh only if you compile on the Pi
 
 # Lines in config.txt that conflict with the power block below get commented out.
 BOOT_BLOCK='dtoverlay=disable-bt
@@ -141,19 +140,15 @@ RuntimeMaxUse=15M'
 }
 
 step_update() {
-  step "Update packages and install build dependencies"
+  step "Update packages"
   if (( DRY_RUN )); then
     echo "  [dry-run] apt-get update  (skipped; simulating with the current package lists)"
     apt-get -s -o Debug::NoLocking=1 full-upgrade | awk '/^Inst /{n++} END{print "  would upgrade/install " n+0 " packages"}'
-    local missing=() d
-    for d in "${DEPS[@]}"; do if ! installed "$d"; then missing+=("$d"); fi; done
-    echo "  would install dependencies: ${missing[*]:-(all present)}"
     return 0
   fi
   export DEBIAN_FRONTEND=noninteractive
   run apt-get update
   run apt-get -y -o Dpkg::Options::=--force-confold full-upgrade
-  run apt-get -y install "${DEPS[@]}"
   run apt-get clean
 }
 

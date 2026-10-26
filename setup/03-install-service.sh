@@ -87,6 +87,8 @@ main() {
       "$BIN" --version || die "the installed program does not run (is this the 64-bit Raspberry Pi OS build?)"
     fi
   else
+    # Only a source install needs git and the build tools; a release install needs neither.
+    if ! command -v git >/dev/null; then run env DEBIAN_FRONTEND=noninteractive apt-get -y install git; fi
     step "Source"
     if [[ -z $URL ]]; then
       URL=$(git -C "$SELF_REPO" remote get-url origin 2>/dev/null || true)
@@ -131,7 +133,7 @@ main() {
       echo "  using the prebuilt binary $BINARY"
       built=$BINARY
     else
-      if ! command -v cargo >/dev/null; then run "$DEPLOY/setup/02-matrix-setup.sh" --apply --yes --build --only deps; fi
+      if ! command -v cargo >/dev/null || ! command -v gcc >/dev/null; then run "$DEPLOY/setup/02-matrix-setup.sh" --apply --yes --build --only deps; fi
       if (( REBUILD )); then run cargo clean --manifest-path "$DEPLOY/Cargo.toml" --target-dir "$TARGET_DIR" --profile pi; fi
       run nice -n 10 env CARGO_TARGET_DIR="$TARGET_DIR" cargo build --manifest-path "$DEPLOY/Cargo.toml" \
           --profile pi --features hardware --locked --bins -j1

@@ -61,7 +61,11 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
 if (( FROM_SOURCE )); then
-  command -v git >/dev/null || die "git is needed for --from-source (sudo apt-get install git)"
+  if ! command -v git >/dev/null; then
+    (( DRY )) && die "git is needed for --from-source (sudo apt-get install git)"
+    info "installing git (needed to fetch the source)"
+    DEBIAN_FRONTEND=noninteractive apt-get -y install git
+  fi
   info "cloning https://github.com/$REPO ($REF)"
   git clone --quiet --depth 1 --branch "$REF" "https://github.com/$REPO.git" "$TMP/src"
   if (( DRY )); then info "dry run: would run $TMP/src/setup/03-install-service.sh --apply --repo https://github.com/$REPO.git --ref $REF ${PASS[*]:-}"; exit 0; fi
