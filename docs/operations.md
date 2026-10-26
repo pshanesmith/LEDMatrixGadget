@@ -53,7 +53,7 @@ The Pi has about 460 MB of RAM. The display itself needs about 35 MB. Claude Cod
 `sudo apt update && sudo apt full-upgrade`, then reboot. After a kernel update confirm `isolcpus` and the sound blacklist still apply (`./setup/02-matrix-setup.sh --only verify`). No unattended upgrades are installed by design.
 
 ## Automatic updates
-The Pi upgrades itself nightly (`unattended-upgrades`): Debian security and stable updates plus the Raspberry Pi repository, run at about 03:00. If a kernel or firmware update needs a reboot it happens at **04:00 and only when nobody is logged in**, so an open SSH session postpones it a night; the display is dark for about a minute. Application code is not updated this way: run the installer again (`sudo bash install.sh`).
+The Pi upgrades itself nightly (`unattended-upgrades`): Debian security and stable updates plus the Raspberry Pi repository, run at about 03:00. If a kernel or firmware update needs a reboot it happens at **04:00 and only when nobody is logged in**, so an open SSH session postpones it a night; the display is dark for about a minute. Application code is not updated this way: run the installer again (the `curl ... | sudo bash` command above).
 
 | Task | Command |
 |---|---|
@@ -70,13 +70,13 @@ The health check runs ten minutes after every boot and daily at 08:00; a failure
 The display is a Rust program, installed from a GitHub release (built by GitHub Actions for 64-bit Raspberry Pi OS):
 
 ```bash
-curl -fsSL https://github.com/pshanesmith/LEDMatrixGadget/releases/latest/download/install.sh -o install.sh
-sudo bash install.sh                       # install or UPDATE to the newest release (add --version v0.2.0 to pin one)
+curl -fsSL https://github.com/pshanesmith/LEDMatrixGadget/releases/latest/download/install.sh | sudo bash
+# install or UPDATE to the newest release; options follow `-s --`, e.g.  ... | sudo bash -s -- --version v0.2.1
 ```
 
 It verifies the download's SHA-256, installs into `/opt/matrix` (`bin/`, `setup/`, `systemd/`, `config/`, `tools/`, `VERSION`), keeps any existing `/etc/matrix` files, installs the systemd units and restarts the service. `cat /opt/matrix/VERSION` shows what is installed. Tools next to the service: `/opt/matrix/bin/matrix-geocode`, `matrix-set-config`, `matrix-ha-discover`, `matrix-hello`.
 
-**Compile on the Pi instead:** `sudo bash install.sh --from-source [--ref BRANCH]` clones the repository to `/opt/matrix` and builds there (`cargo build --profile pi --features hardware`; about 1 GB of RAM including swap and a long wait; the installer installs `gcc cargo rustc` if they are missing). Later updates with `sudo /opt/matrix/setup/03-install-service.sh --apply` only rebuild what changed; `--rebuild` starts over. A source install and a release install do not mix: the release installer refuses to overwrite a git checkout.
+**Compile on the Pi instead:** `curl -fsSL <url>/install.sh | sudo bash -s -- --from-source [--ref BRANCH]` clones the repository to `/opt/matrix` and builds there (`cargo build --profile pi --features hardware`; about 1 GB of RAM including swap and a long wait; the installer installs `gcc cargo rustc` if they are missing). Later updates with `sudo /opt/matrix/setup/03-install-service.sh --apply` only rebuild what changed; `--rebuild` starts over. A source install and a release install do not mix: the release installer refuses to overwrite a git checkout.
 
 **Your own build:** `./tools/cross-build.sh` (on a Mac; needs `zig`, `cargo-zigbuild` and the `aarch64-unknown-linux-gnu` target) makes the programs in `dist/`; copy them over and run `sudo setup/03-install-service.sh --apply --binary /tmp/matrix-display`, or pack them with `./tools/package-release.sh`. Check the `render avg` and `rss` figures in `journalctl -u matrix-display` after a change.
 

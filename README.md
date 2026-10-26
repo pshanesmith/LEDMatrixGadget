@@ -72,13 +72,15 @@ Download and run the installer from the latest GitHub release. It needs no git a
 program is built for 64-bit Raspberry Pi OS by GitHub Actions and downloaded as one checksummed archive.
 
 ```bash
-curl -fsSL https://github.com/pshanesmith/LEDMatrixGadget/releases/latest/download/install.sh -o install.sh
-less install.sh                  # it runs as root: read it first
-sudo bash install.sh             # installs into /opt/matrix, creates /etc/matrix, starts the service
+curl -fsSL https://github.com/pshanesmith/LEDMatrixGadget/releases/latest/download/install.sh | sudo bash
 ```
 
+That installs into `/opt/matrix`, creates `/etc/matrix` and starts the service. Options go after `-s --`, for example
+`... | sudo bash -s -- --version v0.2.1 --yes`. Because the script runs as root, you may prefer to read it first:
+`curl -fsSLO <same url>`, `less install.sh`, `sudo bash install.sh`.
+
 Then set your location and the Home Assistant token (see [docs/operations.md](docs/operations.md)).
-Run the same two commands again to update. Options: `--version v0.2.0` pins a release, `--from-source [--ref main]`
+Run the same command again to update. Options: `--version v0.2.0` pins a release, `--from-source [--ref main]`
 clones the repository and compiles on the Pi instead (slow, needs about 1 GB of RAM with swap), `--no-start`,
 `--no-drop`, `--yes`, `--dry-run`.
 

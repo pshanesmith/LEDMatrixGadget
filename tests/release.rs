@@ -84,6 +84,55 @@ fn installer_downloads_verifies_and_unpacks() {
     assert!(text.contains("release 9.9.9") && text.contains("--release") && text.contains("bin/matrix-display"), "{text}");
 }
 
+/// `curl ... | sudo bash -s -- OPTIONS`: the script arrives on stdin.
+fn install_piped(base: &Path, extra: &[&str]) -> Output {
+    use std::io::Write;
+    use std::process::Stdio;
+    let mut child = Command::new("bash")
+        .args(["-s", "--"])
+        .args(extra)
+        .env("MATRIX_RELEASE_BASE", format!("file://{}", base.display()))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let script = std::fs::read(root().join("install.sh")).unwrap();
+    child.stdin.take().unwrap().write_all(&script).unwrap();
+    child.wait_with_output().unwrap()
+}
+
+#[test]
+fn installer_works_when_piped_into_bash() {
+    if !tools_present() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let (bins, out) = (dir.path().join("bins"), dir.path().join("out"));
+    fake_bins(&bins);
+    assert!(package(&bins, &out).status.success());
+    let r = install_piped(&out, &["--dry-run"]);
+    let text = String::from_utf8_lossy(&r.stdout).to_string() + &String::from_utf8_lossy(&r.stderr);
+    assert!(r.status.success(), "{text}");
+    assert!(text.contains("release 9.9.9") && text.contains("--release"), "{text}");
+    // options after `-s --` reach the script, and a bad one is reported
+    let bad = install_piped(&out, &["--nope"]);
+    assert!(!bad.status.success() && String::from_utf8_lossy(&bad.stderr).contains("unknown option: --nope"));
+}
+
+#[test]
+fn a_truncated_script_runs_nothing() {
+    use std::io::Write;
+    use std::process::Stdio;
+    let script = std::fs::read_to_string(root().join("install.sh")).unwrap();
+    let cut = &script[..script.len() - 40]; // the last line (`main "$@"`) never arrives
+    let mut child = Command::new("bash").args(["-s", "--", "--dry-run"]).stdin(Stdio::piped())
+        .stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+    child.stdin.take().unwrap().write_all(cut.as_bytes()).unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(!String::from_utf8_lossy(&out.stdout).contains("downloading"), "it started running");
+}
+
 #[test]
 fn a_corrupt_download_is_refused() {
     if !tools_present() {
