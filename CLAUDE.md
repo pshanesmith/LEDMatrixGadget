@@ -1,11 +1,13 @@
 # LEDMatrixGadget
 
-64x64 RGB LED matrix status display (Raspberry Pi Zero 2 W). See README.md, DESIGN.md, docs/operations.md.
+64x64 RGB LED matrix status display (Raspberry Pi Zero 2 W), written in Rust. See README.md, DESIGN.md, docs/operations.md.
 
 ## Workflow: develop on the Mac, test on the Pi
-- Develop locally in `.venv` (Python >= 3.11; create with `uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -e '.[dev]'`).
-- Verify with `.venv/bin/pytest` and the emulator: `tools/preview.py` or `python -m matrix_display --emulate --offline --sample <name> --out x.png|gif`. No panel is needed.
-- Tests in `tests/test_setup_boot.py` exercise the Pi setup scripts and are skipped on non-Linux.
-- Deploy: push to GitHub, then on the Pi run `sudo /opt/matrix/setup/03-install-service.sh --apply` (`--ref <branch|tag>` to try a branch). `/opt/matrix` is a root-owned deploy copy; never edit it.
-- Do not run Claude Code or other large programs on the Pi (about 460 MB RAM; it causes watchdog resets).
+- Develop locally with Rust 1.85 or newer (`brew install rustup` and `rustup default stable`, or `brew install rust`). With a rustup toolchain that is not linked into the PATH, use `~/.rustup/toolchains/stable-*/bin`.
+- Verify with `cargo test` and the emulator: `cargo run --bin matrix-preview -- --sample <name> --out x.png` or `cargo run -- --emulate --offline --sample <name> --seconds 4 --out x.png|gif`. No panel is needed; the default build has no panel driver.
+- The panel backend (`--features hardware`, crate `rpi-led-panel`) is Linux-only and does not compile on a Mac. Build it with `tools/cross-build.sh --target aarch64-unknown-linux-musl` (needs `zig`, `cargo-zigbuild`; the musl target is a static binary, the default glibc one needs `rustup target add aarch64-unknown-linux-gnu`), and compile its tests with `cargo zigbuild --lib --tests --features hardware --target aarch64-unknown-linux-musl`. They cannot run off the Pi.
+- Rendering is checked against golden images in `tests/golden/`. A deliberate rendering change must update them (then review the PNGs): `UPDATE_GOLDEN=1 cargo test --test ui` for the widget screens (made by the original Python version, which has no randomness), `UPDATE_GOLDEN=1 cargo test --test scene` for the scene (`scene-cases.json` lists the cases). The seeded shapes use `rand_chacha`, so a `rand` upgrade can change them.
+- Tests in `tests/setup_scripts.rs` exercise the Pi setup scripts and the boot-file shell helpers; the shell ones run on Linux only.
+- Deploy: tag a release (`git tag vX.Y.Z && git push origin vX.Y.Z`; the tag must match `Cargo.toml`) and GitHub Actions builds and publishes it; on the Pi run `curl -fsSL .../releases/latest/download/install.sh | sudo bash` (add `-s -- --version TAG` to pin; `--version TAG` pins one; `--from-source --ref <branch>` compiles a branch on the Pi). `/opt/matrix` is a root-owned deploy copy; never edit it.
+- Do not run Claude Code or other large programs on the Pi (about 460 MB RAM; it causes watchdog resets), and avoid compiling there if a cross-build will do.
 - `config/config.toml` and secrets are gitignored; on the Pi they live in `/etc/matrix/`.

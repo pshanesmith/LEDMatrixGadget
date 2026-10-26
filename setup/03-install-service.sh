@@ -1,18 +1,23 @@
 #!/usr/bin/env bash
-# Deploy the display from GitHub into /opt/matrix and run it as a systemd service.
+# Install the display into /opt/matrix and run it as a systemd service. Either from a GitHub release
+# (--release DIR, which install.sh prepares: no git, no compiler) or from a git clone of the source.
 #
 #   ./setup/03-install-service.sh                 dry run (default)
 #   sudo ./setup/03-install-service.sh --apply    deploy, install, enable and start
 # Run it again later (from /opt/matrix/setup or from a checkout) to UPDATE: it pulls, reinstalls, restarts.
 #
-# Options: --repo URL    GitHub clone URL (default: the 'origin' of the checkout you run this from)
+# Options: --release DIR  install the unpacked release in DIR (what install.sh does); no clone, no build
+#          --repo URL    GitHub clone URL (default: the 'origin' of the checkout you run this from)
 #          --ref NAME    branch or tag to deploy (default: main)
-#          --rebuild     rebuild the panel library instead of reusing a finished build from the checkout
+#          --binary PATH install a prebuilt matrix-display (from tools/cross-build.sh) instead of compiling here
+#          --rebuild     compile from scratch instead of reusing the previous build
 #          --no-start    install and enable but do not start now
 #          --no-drop     keep running as root (skip the privilege drop)
 #          --uninstall   stop and remove the service (keeps /opt/matrix, /etc/matrix and the state dir)
 #          --yes         skip confirmation prompts
-# Layout:  /opt/matrix        clone of the repository, with .venv/ and vendor/ inside (root-owned, world-readable)
+# Layout:  /opt/matrix        bin/ (the programs), setup/, systemd/, config/, tools/ and VERSION from a release,
+#                             or a clone of the repository with target/ (the build) and bin/ inside
+#                             (root-owned, world-readable)
 #          /etc/matrix        config.toml, secrets.env (0600), deploy_key (0600, read-only deploy key)
 #          /var/lib/matrix-display   weather / Home Assistant cache
 # For a PRIVATE repository use an SSH URL (git@github.com:USER/REPO.git): the script creates a deploy key and
@@ -28,25 +33,27 @@ main() {
   local DEPLOY=${MATRIX_DEPLOY_DIR:-/opt/matrix} REF=${MATRIX_REF:-main} URL=${MATRIX_REPO_URL:-}
   local ETC=${ETC_DIR:-/etc/matrix} STATE=${STATE_DIR_PATH:-/var/lib/matrix-display}
   local UNIT=/etc/systemd/system/matrix-display.service KEY
-  local START=1 UNINSTALL=0 REBUILD=0 NODROP=0
+  local START=1 UNINSTALL=0 REBUILD=0 NODROP=0 BINARY= RELEASE=
   ASSUME_YES=0
   while (( $# )); do
     case $1 in
       --apply) DRY_RUN=0 ;;
       --repo) URL=$2; shift ;;
       --ref) REF=$2; shift ;;
+      --release) RELEASE=$2; shift ;;
+      --binary) BINARY=$2; shift ;;
       --rebuild) REBUILD=1 ;;
       --no-start) START=0 ;;
       --no-drop) NODROP=1 ;;
       --uninstall) UNINSTALL=1 ;;
       --yes) ASSUME_YES=1 ;;
-      -h|--help) sed -n '2,23p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; return 0 ;;
+      -h|--help) sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; return 0 ;;
       *) die "unknown option: $1 (try --help)" ;;
     esac
     shift
   done
   KEY=$ETC/deploy_key
-  local PY=$DEPLOY/.venv/bin/python
+  local BIN=$DEPLOY/bin/matrix-display TARGET_DIR=${CARGO_TARGET_DIR:-$DEPLOY/target}
 
   require_pi
   require_root
@@ -60,79 +67,87 @@ main() {
     return 0
   fi
 
-  step "Source"
-  if [[ -z $URL ]]; then
-    URL=$(git -C "$SELF_REPO" remote get-url origin 2>/dev/null || true)
-    [[ -n $URL ]] || die "no repository URL: pass --repo git@github.com:USER/LEDMatrixGadget.git (or set a git 'origin')"
-  fi
-  echo "  repository: $URL   ref: $REF   target: $DEPLOY"
-  if [[ $URL == git@* || $URL == ssh://* ]]; then
-    if [[ ! -f $KEY ]]; then
-      echo "  creating a deploy key at $KEY"
-      run install -d -m 755 "$ETC"
-      run ssh-keygen -q -t ed25519 -N "" -C "matrix-pi deploy key" -f "$KEY"
-      if (( ! DRY_RUN )); then
-        echo; echo "  Add this PUBLIC key in GitHub: repository > Settings > Deploy keys > Add deploy key"
-        echo "  (title 'matrix-pi', leave 'Allow write access' OFF):"; echo; cat "$KEY.pub"; echo
-        if (( ! ASSUME_YES )); then read -r -p "  Press Enter once the key is added: " _; fi
-      fi
+  if [[ -n $RELEASE ]]; then
+    step "Install the release into $DEPLOY"
+    [[ -x $RELEASE/bin/matrix-display ]] || die "$RELEASE is not an unpacked release (no bin/matrix-display)"
+    if [[ -d $DEPLOY/.git ]]; then
+      die "$DEPLOY is a git checkout (installed from source). Move it away first, or keep using this script without --release."
     fi
-    export GIT_SSH_COMMAND="ssh -i $KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$ETC/known_hosts"
-  fi
-
-  step "Deploy to $DEPLOY"
-  if [[ -d $DEPLOY/.git ]]; then
-    run git -C "$DEPLOY" remote set-url origin "$URL"
-    run git -C "$DEPLOY" fetch --tags --prune origin
-    run git -C "$DEPLOY" checkout -q "$REF"
-    if (( DRY_RUN )) || git -C "$DEPLOY" rev-parse -q --verify "origin/$REF" >/dev/null; then
-      run git -C "$DEPLOY" merge --ff-only "origin/$REF"
-    fi
-  else
-    run git clone --branch "$REF" "$URL" "$DEPLOY"
-  fi
-  run chown -R root:root "$DEPLOY"
-  run chmod -R go+rX "$DEPLOY"
-
-  step "Python environment and panel library"
-  # Reuse a finished build from the checkout this script was started from (a rebuild takes 10+ minutes
-  # on this Pi and risks exhausting memory); otherwise build with setup/02-matrix-setup.sh.
-  local reuse=""
-  if (( ! REBUILD )) && [[ $SELF_REPO != "$DEPLOY" && -x $SELF_REPO/.venv/bin/python ]] \
-      && "$SELF_REPO/.venv/bin/python" -c 'import rgbmatrix' 2>/dev/null \
-      && [[ -x $SELF_REPO/vendor/rpi-rgb-led-matrix/examples-api-use/demo ]]; then
-    reuse=$SELF_REPO
-  fi
-  if [[ ! -x $PY ]]; then run python3 -m venv --system-site-packages "$DEPLOY/.venv"; fi
-  if [[ -x $PY ]] && "$PY" -c 'import rgbmatrix' 2>/dev/null; then
-    echo "  rgbmatrix already installed in $DEPLOY/.venv"
-  elif [[ -n $reuse ]]; then
-    echo "  reusing the finished build from $reuse"
-    if [[ ! -d $DEPLOY/vendor ]]; then run cp -a "$reuse/vendor" "$DEPLOY/vendor"; fi
+    echo "  release: $(cat "$RELEASE/VERSION" 2>/dev/null || echo unknown)   target: $DEPLOY"
+    run install -d -m 755 "$DEPLOY"
+    local part
+    for part in bin setup systemd config tools; do
+      run rm -rf "${DEPLOY:?}/$part"
+      run cp -a "$RELEASE/$part" "$DEPLOY/$part"
+    done
+    run install -m 644 "$RELEASE/VERSION" "$DEPLOY/VERSION"
+    run chown -R root:root "$DEPLOY"
+    run chmod -R go+rX "$DEPLOY"
     if (( ! DRY_RUN )); then
-      sp_old=$(echo "$reuse"/.venv/lib/python3*/site-packages)
-      sp_new=$(echo "$DEPLOY"/.venv/lib/python3*/site-packages)
-      cp -a "$sp_old"/rgbmatrix "$sp_old"/rgbmatrix-*.dist-info "$sp_new"/
-      chown -R root:root "$DEPLOY/vendor" "$sp_new"
-    else
-      echo "  [dry-run] copy rgbmatrix package files into the new virtualenv"
+      "$BIN" --version || die "the installed program does not run (is this the 64-bit Raspberry Pi OS build?)"
     fi
   else
-    run "$DEPLOY/setup/02-matrix-setup.sh" --apply --yes --only deps,library,python
-  fi
-  # Editable install: a later 'git pull' is all an update needs; no pip packages come from the internet
-  # except the build backend (Pillow is the system package, rgbmatrix is built from the pinned source).
-  run "$PY" -m pip install -q -e "$DEPLOY"
-  if (( ! DRY_RUN )); then
-    "$PY" -c 'import matrix_display, rgbmatrix, PIL; print("  imports OK, Pillow from", PIL.__file__)' \
-      || die "the deployed environment cannot import the app or the panel bindings"
-  fi
+    # Only a source install needs git and the build tools; a release install needs neither.
+    if ! command -v git >/dev/null; then run env DEBIAN_FRONTEND=noninteractive apt-get -y install git; fi
+    step "Source"
+    if [[ -z $URL ]]; then
+      URL=$(git -C "$SELF_REPO" remote get-url origin 2>/dev/null || true)
+      [[ -n $URL ]] || die "no repository URL: pass --repo git@github.com:USER/LEDMatrixGadget.git (or set a git 'origin')"
+    fi
+    echo "  repository: $URL   ref: $REF   target: $DEPLOY"
+    if [[ $URL == git@* || $URL == ssh://* ]]; then
+      if [[ ! -f $KEY ]]; then
+        echo "  creating a deploy key at $KEY"
+        run install -d -m 755 "$ETC"
+        run ssh-keygen -q -t ed25519 -N "" -C "matrix-pi deploy key" -f "$KEY"
+        if (( ! DRY_RUN )); then
+          echo; echo "  Add this PUBLIC key in GitHub: repository > Settings > Deploy keys > Add deploy key"
+          echo "  (title 'matrix-pi', leave 'Allow write access' OFF):"; echo; cat "$KEY.pub"; echo
+          if (( ! ASSUME_YES )); then read -r -p "  Press Enter once the key is added: " _; fi
+        fi
+      fi
+      export GIT_SSH_COMMAND="ssh -i $KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$ETC/known_hosts"
+    fi
 
-  # tools/health-check.sh compares this with the installed Pillow (the panel bindings depend on its layout).
-  if (( ! DRY_RUN )) && [[ ! -f /var/lib/matrix-display/pillow-version ]]; then
-    install -d -m 755 /var/lib/matrix-display
-    dpkg-query -W -f='${Version}\n' python3-pil > /var/lib/matrix-display/pillow-version
-    echo "  recorded the Pillow version of this build: $(cat /var/lib/matrix-display/pillow-version)"
+    step "Deploy to $DEPLOY"
+    if [[ -d $DEPLOY/.git ]]; then
+      run git -C "$DEPLOY" remote set-url origin "$URL"
+      run git -C "$DEPLOY" fetch --tags --prune origin
+      run git -C "$DEPLOY" checkout -q "$REF"
+      if (( DRY_RUN )) || git -C "$DEPLOY" rev-parse -q --verify "origin/$REF" >/dev/null; then
+        run git -C "$DEPLOY" merge --ff-only "origin/$REF"
+      fi
+    else
+      run git clone --branch "$REF" "$URL" "$DEPLOY"
+    fi
+    run chown -R root:root "$DEPLOY"
+    run chmod -R go+rX "$DEPLOY"
+
+    step "Build and install the program"
+    # The panel driver (the pure Rust rpi-led-panel crate) is compiled into the binary; nothing else is
+    # installed system-wide. A source build needs about 1 GB of RAM plus swap and
+    # 15+ minutes on a Zero 2 W: tools/cross-build.sh on another machine is much faster; pass its output with --binary.
+    local built=$TARGET_DIR/pi/matrix-display
+    if [[ -n $BINARY ]]; then
+      [[ -x $BINARY ]] || die "--binary $BINARY is not an executable file"
+      echo "  using the prebuilt binary $BINARY"
+      built=$BINARY
+    else
+      if ! command -v cargo >/dev/null || ! command -v gcc >/dev/null; then run "$DEPLOY/setup/02-matrix-setup.sh" --apply --yes --build --only deps; fi
+      if (( REBUILD )); then run cargo clean --manifest-path "$DEPLOY/Cargo.toml" --target-dir "$TARGET_DIR" --profile pi; fi
+      run nice -n 10 env CARGO_TARGET_DIR="$TARGET_DIR" cargo build --manifest-path "$DEPLOY/Cargo.toml" \
+          --profile pi --features hardware --locked --bins -j1
+    fi
+    run install -D -m 755 "$built" "$BIN"
+    # The helper programs sit next to the display binary (the build directory, or --binary's directory).
+    local tool
+    for tool in matrix-hello matrix-geocode matrix-set-config matrix-ha-discover; do
+      if [[ -x $(dirname "$built")/$tool ]]; then run install -D -m 755 "$(dirname "$built")/$tool" "$DEPLOY/bin/$tool"; fi
+    done
+    if (( ! DRY_RUN )); then
+      "$BIN" --version || die "the installed program does not run"
+    fi
+
   fi
 
   step "Preflight"
@@ -146,8 +161,18 @@ main() {
     local cfg_src=$DEPLOY/config/config.example.toml
     [[ -f $SELF_REPO/config/config.toml ]] && cfg_src=$SELF_REPO/config/config.toml
     run install -m 644 "$cfg_src" "$ETC/config.toml"
-    [[ $cfg_src == *example* ]] && warn "installed the EXAMPLE config: set your location (tools/geocode.py <ZIP>) in $ETC/config.toml"
-  else echo "  keeping existing $ETC/config.toml"; fi
+    [[ $cfg_src == *example* ]] && warn "installed the EXAMPLE config: set your location ($DEPLOY/bin/matrix-geocode <ZIP> --config $ETC/config.toml) in $ETC/config.toml"
+  else
+    echo "  keeping existing $ETC/config.toml"
+    # Left over from the Python version: the option no longer exists and an unknown key stops the program.
+    if grep -qE '^[[:space:]]*safe_image_copy[[:space:]]*=' "$ETC/config.toml"; then
+      echo "  removing the obsolete safe_image_copy setting from $ETC/config.toml (backup: config.toml.bak)"
+      if (( ! DRY_RUN )); then
+        cp -p "$ETC/config.toml" "$ETC/config.toml.bak"
+        sed -i -E '/^[[:space:]]*safe_image_copy[[:space:]]*=/d' "$ETC/config.toml"
+      fi
+    fi
+  fi
   if [[ ! -f $ETC/secrets.env ]]; then
     if [[ -f $SELF_REPO/secrets.env ]]; then run install -m 600 -o root -g root "$SELF_REPO/secrets.env" "$ETC/secrets.env"
     else run install -m 600 -o root -g root "$DEPLOY/config/secrets.env.example" "$ETC/secrets.env"
@@ -156,7 +181,7 @@ main() {
   run install -d -m 755 -o daemon -g daemon "$STATE"
 
   step "Privilege drop check"
-  # After GPIO setup the panel library drops to user 'daemon'; code imported later must stay readable.
+  # After GPIO setup the panel library drops to user 'daemon'; config reloads and the cache still need to be readable.
   local DROP_ENV="" blocked="" d=$DEPLOY
   [[ -d $d ]] || d=$(dirname "$DEPLOY")
   while [[ $d != / ]]; do
@@ -173,7 +198,7 @@ main() {
 
   step "systemd unit"
   local unit
-  unit=$(sed -e "s#@REPO@#$DEPLOY#g" -e "s#@PYTHON@#$PY#g" -e "s#@DROP_ENV@#$DROP_ENV#g" "$SELF_REPO/systemd/matrix-display.service")
+  unit=$(sed -e "s#@REPO@#$DEPLOY#g" -e "s#@BIN@#$BIN#g" -e "s#@DROP_ENV@#$DROP_ENV#g" "$SELF_REPO/systemd/matrix-display.service")
   write_file "$UNIT" "$unit"
   write_file /etc/systemd/system/matrix-health.service \
     "$(sed -e "s#@REPO@#$DEPLOY#g" "$SELF_REPO/systemd/matrix-health.service")"

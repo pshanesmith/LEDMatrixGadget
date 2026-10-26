@@ -9,7 +9,7 @@ label = ""
 units = "fahrenheit"
 
 [display]
-# 64x64 panel: rows = cols = 64 (hzeller counts the panel's full height).
+# 64x64 panel: rows = cols = 64 (the driver counts the panel's full height).
 rows = 64
 cols = 64
 chain_length = 1
@@ -18,15 +18,14 @@ hardware_mapping = "adafruit-hat-pwm"   # "adafruit-hat" if the PWM bridge is no
 gpio_slowdown = 2        # verified on the panel 2026-10-24: clean picture, ~108 Hz refresh
 pwm_bits = 11
 pwm_lsb_nanoseconds = 130
-limit_refresh_hz = 0     # e.g. 150 to hold a steady refresh rate (see docs/operations.md, Flicker)
+limit_refresh_hz = 0     # target refresh rate; 0 = the driver default (120 Hz). e.g. 150 to hold a steady rate (docs/operations.md, Flicker)
 row_address_type = 0
 multiplexing = 0
 rgb_sequence = "RGB"
 brightness = 50          # percent; 4 A supply, keep modest
 max_brightness = 70      # hard ceiling; brightness is clamped to this
 scene_fps = 15
-safe_image_copy = true  # frames go through Pillow's public API; a Pillow upgrade can then never corrupt the picture
-drop_privileges = true   # the service sets MATRIX_DROP_PRIVILEGES=0 if the unprivileged user cannot read the code
+drop_privileges = true   # the panel driver drops root after GPIO setup; the service sets MATRIX_DROP_PRIVILEGES=0 if the unprivileged user cannot reach its files
 
 [weather]
 refresh_seconds = 900

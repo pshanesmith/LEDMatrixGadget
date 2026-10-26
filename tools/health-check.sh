@@ -4,8 +4,6 @@
 # Reads the journal, so run it as root (the systemd timer does) or as a member of the adm group.
 set -uo pipefail
 
-STATE=${MATRIX_STATE_DIR:-/var/lib/matrix-display}
-PILLOW_STAMP=${PILLOW_STAMP:-$STATE/pillow-version}
 UNIT=matrix-display
 bad=0
 msgs=()
@@ -37,12 +35,9 @@ if [[ -z $k ]]; then ok "no kernel problems since boot"; else fail "kernel repor
 grep -q 'isolcpus=' /proc/cmdline && ok "reserved CPU core active" || fail "isolcpus missing from /proc/cmdline (flicker likely)"
 if lsmod | grep -q '^snd_bcm2835'; then fail "snd_bcm2835 is loaded (it conflicts with the panel)"; else ok "sound driver not loaded"; fi
 
-# 5. Information: whether the Pillow package changed since the bindings were built. Harmless while the default
-#    safe_image_copy is on (frames use Pillow's public API); it only matters with safe_image_copy = false.
-have=$(dpkg-query -W -f='${Version}' python3-pil 2>/dev/null)
-if [[ ! -f $PILLOW_STAMP ]]; then warn "no record of the Pillow version the bindings were built with ($PILLOW_STAMP)"
-elif [[ $(cat "$PILLOW_STAMP") == "$have" ]]; then ok "Pillow $have matches the build"
-else warn "Pillow is now $have (the bindings were built against $(cat "$PILLOW_STAMP")); harmless with safe_image_copy = true, otherwise rebuild: sudo ./setup/02-matrix-setup.sh --apply --rebuild"; fi
+# 5. The deployed binary is in place and runs (it only prints its version here; the panel is not touched).
+BIN=${MATRIX_BIN:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/bin/matrix-display}
+if [[ -x $BIN ]]; then ok "binary $("$BIN" --version 2>&1 | head -1)"; else fail "binary $BIN is missing (re-run setup/03-install-service.sh --apply)"; fi
 
 # 6. Information: a reboot is pending, and what the last automatic upgrade did.
 [[ -f /var/run/reboot-required ]] && warn "a reboot is pending (automatic reboot is at 04:00 when nobody is logged in)"

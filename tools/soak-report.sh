@@ -36,27 +36,32 @@ if [[ -n $k ]]; then echo "$k" | tail -15; flag "kernel reported problems"; else
 echo
 
 echo "== Performance lines (one per minute): worst values in the period"
-journalctl -u $UNIT --since "$SINCE" --no-pager -o cat -g 'frames=' | python3 -I -c '
-import re, sys
-rows = [l for l in sys.stdin if "frames=" in l]
-if not rows:
-    print("  no performance lines yet"); sys.exit()
-def vals(key, unit=""):
-    return [float(m.group(1)) for l in rows for m in [re.search(key + r"=([0-9.]+)" + unit, l)] if m]
-def show(label, key, unit="", fn=max, fmt="{:.1f}"):
-    v = vals(key, unit)
-    if v: print(f"  {label:<26}" + fmt.format(fn(v)) + (f"  (of {len(v)} samples)" if label.startswith("frames") else ""))
-print(f"  samples: {len(rows)} minutes")
-show("lowest frames per minute", "frames", fn=min, fmt="{:.0f}")
-show("render avg, worst (ms)", "avg", "ms")
-show("render max, worst (ms)", "max", "ms")
-show("overruns, total", "overruns", fn=sum, fmt="{:.0f}")
-show("app memory, max (MB)", "rss", "MB")
-show("free memory, lowest (MB)", "mem_avail", "MB", fn=min, fmt="{:.0f}")
-show("temperature, max (C)", "temp", "C")
-th = {m.group(1) for l in rows for m in [re.search(r"throttled=(0x[0-9a-f]+)", l)] if m}
-print("  throttle flags seen:       " + ", ".join(sorted(th)))
-' 
+journalctl -u $UNIT --since "$SINCE" --no-pager -o cat -g 'frames=' | awk '
+  function num(key, unit,   m) { if (match($0, key "=[0-9.]+" unit)) { m = substr($0, RSTART + length(key) + 1, RLENGTH - length(key) - 1 - length(unit)); return m + 0 } return "" }
+  /frames=/ {
+    n++
+    v = num("frames", ""); if (v != "" && (fmin == "" || v < fmin)) fmin = v
+    v = num("avg", "ms");  if (v != "" && v > avg) avg = v
+    v = num("max", "ms");  if (v != "" && v > mx) mx = v
+    v = num("overruns", ""); if (v != "") over += v
+    v = num("rss", "MB");  if (v != "" && v > rss) rss = v
+    v = num("mem_avail", "MB"); if (v != "" && (mem == "" || v < mem)) mem = v
+    v = num("temp", "C");  if (v != "" && v > temp) temp = v
+    if (match($0, /throttled=0x[0-9a-f]+/)) seen[substr($0, RSTART + 10, RLENGTH - 10)] = 1
+  }
+  END {
+    if (!n) { print "  no performance lines yet"; exit }
+    printf "  samples: %d minutes\n", n
+    printf "  %-26s%.0f\n", "lowest frames per minute", fmin
+    printf "  %-26s%.1f\n", "render avg, worst (ms)", avg
+    printf "  %-26s%.1f\n", "render max, worst (ms)", mx
+    printf "  %-26s%.0f\n", "overruns, total", over
+    printf "  %-26s%.1f\n", "app memory, max (MB)", rss
+    printf "  %-26s%.0f\n", "free memory, lowest (MB)", mem
+    printf "  %-26s%.1f\n", "temperature, max (C)", temp
+    t = ""; for (k in seen) t = t (t == "" ? "" : ", ") k
+    print "  throttle flags seen:       " t
+  }'
 echo
 
 echo "== Power / throttling since boot (the service cannot read this after dropping root, so it is read here)"

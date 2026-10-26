@@ -1,2 +1,0 @@
-# Runtime dependencies (the rgbmatrix bindings are built from source by setup/02-matrix-setup.sh)
-pillow

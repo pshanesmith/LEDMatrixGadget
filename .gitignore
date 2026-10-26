@@ -11,23 +11,22 @@ config.toml
 !config.example.toml
 !config/config.example.toml
 
+# Hardware test log written by tools/test-matrix.sh on the Pi it ran on
+docs/hardware-test-results.txt
+
 # Runtime state and caches
 state-cache.json
 *.log
 
-# Python
-__pycache__/
-*.pyc
-.venv/
-venv/
-.pytest_cache/
-build/
-*.egg-info/
+# Cross-built binaries (tools/cross-build.sh) and the deploy copy of the binary on the Pi
+dist/
+/bin/
 
 # Editor / OS
 .vscode/
 .idea/
 .DS_Store
 
-# Third-party library cloned by setup/02-matrix-setup.sh
-vendor/
+
+# Rust
+target/
