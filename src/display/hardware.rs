@@ -71,7 +71,7 @@ pub fn matrix_config(cfg: &DisplayConfig) -> Result<RGBMatrixConfig> {
         parallel: cfg.parallel as usize,
         pwm_bits: cfg.pwm_bits as usize,
         pwm_lsb_nanoseconds: cfg.pwm_lsb_nanoseconds,
-        slowdown: Some(cfg.gpio_slowdown),
+        slowdown: Some(i32::try_from(cfg.gpio_slowdown).unwrap_or(i32::MAX)),
         // 0 means "no cap" in the config; the driver always wants a target, so use its default (120 Hz).
         refresh_rate: if cfg.limit_refresh_hz == 0 { 120 } else { cfg.limit_refresh_hz as usize },
         row_setter: row_setter(cfg.row_address_type)?,
