@@ -5,9 +5,26 @@ an animated weather scene, and Home Assistant status. Written in Rust; the panel
 [`rpi-led-panel`](https://github.com/EmbersArc/rpi_led_panel) crate, a pure Rust port of hzeller's driver. See
 [DESIGN.md](DESIGN.md) for the design and [docs/operations.md](docs/operations.md) for day-to-day operation.
 
-## Development setup (no panel needed)
+## Development host requirements
 
-Install Rust (1.85 or newer), for example `brew install rustup && rustup default stable`.
+Everything below is for the machine you develop on (a Mac, or Linux). The Pi itself needs none of it when you install
+a release.
+
+| Needed for | Tool | Install (macOS) |
+|---|---|---|
+| Building, tests, previews, the emulator | Rust 1.85 or newer (`cargo`, `rustc`; `clippy` for linting) | `brew install rustup && rustup default stable` (or `brew install rust`) |
+| The shell-script tests and `tools/package-release.sh` | `bash`, `tar`, `curl`, and `sha256sum` or `shasum` | already on macOS and Linux |
+| Cross-building for the Pi (`tools/cross-build.sh`) | `zig`, `cargo-zigbuild`, and the Rust target `aarch64-unknown-linux-gnu` (the glibc build for Raspberry Pi OS; add `aarch64-unknown-linux-musl` for a static one) | `brew install zig cargo-zigbuild`, then `rustup target add aarch64-unknown-linux-gnu` |
+| Publishing a release by hand | GitHub CLI `gh`, logged in | `brew install gh && gh auth login` |
+| Pi setup-script tests (`apt-config`, `systemd-analyze` checks) | Linux only; skipped elsewhere | none |
+
+No Python, C++ toolchain, `make` or image library is needed. The first `cargo build` downloads the crates listed in
+`Cargo.lock` from crates.io, so it needs network access. Releases made by GitHub Actions
+(`.github/workflows/release.yml`) install their own toolchain (Rust, `ziglang` from pip, `cargo-zigbuild`), so none
+of this is needed for them. If `cargo` is installed through `rustup` but not on your `PATH`, it is in
+`~/.rustup/toolchains/stable-*/bin`.
+
+## Development setup (no panel needed)
 
 ```bash
 cargo test
