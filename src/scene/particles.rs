@@ -6,7 +6,7 @@ use std::rc::Rc;
 use super::cache::Memo;
 use super::palette::*;
 use crate::gfx::{pyround, Img, Mask};
-use crate::pyrandom::PyRandom;
+use crate::scene_rng::SceneRng;
 
 const N_RAIN: usize = 44;
 const N_SNOW: usize = 44;
@@ -53,7 +53,7 @@ thread_local! {
 fn rain_drops() -> Rc<Vec<Drop>> {
     DROPS.with(|m| {
         m.get((), || {
-            let mut rng = PyRandom::new(902);
+            let mut rng = SceneRng::new(902);
             (0..N_RAIN)
                 .map(|_| {
                     let x0 = rng.uniform(0.0, W as f64);
@@ -70,7 +70,7 @@ fn rain_drops() -> Rc<Vec<Drop>> {
 fn flakes() -> Rc<Vec<Flake>> {
     FLAKES.with(|m| {
         m.get((), || {
-            let mut rng = PyRandom::new(311);
+            let mut rng = SceneRng::new(311);
             (0..N_SNOW)
                 .map(|_| {
                     let x0 = rng.uniform(0.0, W as f64);
@@ -119,7 +119,7 @@ fn fog_masks() -> Rc<(Mask, Mask)> {
             let profile = [50.0, 105.0, 150.0, 105.0, 50.0];
             let mut out = Vec::new();
             for (seed, rows) in [(5u64, [13i32, 21, 29]), (9, [17, 25, 32])] {
-                let mut rng = PyRandom::new(seed);
+                let mut rng = SceneRng::new(seed);
                 let mut mask = Mask::new(W, H, 0);
                 let waves: Vec<(i32, f64)> =
                     rows.iter().map(|_| (rng.randint(1, 3), rng.uniform(0.0, 6.28))).collect();
@@ -163,7 +163,7 @@ struct Strike {
 }
 
 fn strike(slot: i64) -> Option<Strike> {
-    let mut rng = PyRandom::new((slot * 7919 + 13) as u64);
+    let mut rng = SceneRng::new((slot * 7919 + 13) as u64);
     if rng.random() > 0.8 {
         return None;
     }

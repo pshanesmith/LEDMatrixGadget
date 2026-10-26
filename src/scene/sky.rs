@@ -8,7 +8,7 @@ use chrono::{TimeZone, Utc};
 use super::cache::Memo;
 use super::palette::*;
 use crate::gfx::{pyround, Img, Mask};
-use crate::pyrandom::PyRandom;
+use crate::scene_rng::SceneRng;
 use crate::state::{Condition, Dt};
 
 /// Sun/moon centre sits here at sunrise/sunset.
@@ -64,7 +64,7 @@ struct Star {
 fn stars() -> Rc<Vec<Star>> {
     STARS.with(|m| {
         m.get((), || {
-            let mut rng = PyRandom::new(1717);
+            let mut rng = SceneRng::new(1717);
             (0..26)
                 .map(|_| {
                     let x = rng.randrange(0, W as i32);
@@ -107,7 +107,7 @@ pub fn draw_shooting_star(img: &mut Img, visibility: f64, t: f64) {
     if local > SHOOTING_LENGTH {
         return;
     }
-    let mut rng = PyRandom::new((cycle as i64 * 7919 + 13) as u64);
+    let mut rng = SceneRng::new((cycle as i64 * 7919 + 13) as u64);
     let mut x0 = rng.uniform(6.0, 40.0);
     let y0 = rng.uniform(1.0, 12.0);
     let dx = 30.0 * rng.choice(&[1.0, 1.0, -1.0]);

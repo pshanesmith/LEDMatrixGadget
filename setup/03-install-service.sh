@@ -162,7 +162,17 @@ main() {
     [[ -f $SELF_REPO/config/config.toml ]] && cfg_src=$SELF_REPO/config/config.toml
     run install -m 644 "$cfg_src" "$ETC/config.toml"
     [[ $cfg_src == *example* ]] && warn "installed the EXAMPLE config: set your location ($DEPLOY/bin/matrix-geocode <ZIP> --config $ETC/config.toml) in $ETC/config.toml"
-  else echo "  keeping existing $ETC/config.toml"; fi
+  else
+    echo "  keeping existing $ETC/config.toml"
+    # Left over from the Python version: the option no longer exists and an unknown key stops the program.
+    if grep -qE '^[[:space:]]*safe_image_copy[[:space:]]*=' "$ETC/config.toml"; then
+      echo "  removing the obsolete safe_image_copy setting from $ETC/config.toml (backup: config.toml.bak)"
+      if (( ! DRY_RUN )); then
+        cp -p "$ETC/config.toml" "$ETC/config.toml.bak"
+        sed -i -E '/^[[:space:]]*safe_image_copy[[:space:]]*=/d' "$ETC/config.toml"
+      fi
+    fi
+  fi
   if [[ ! -f $ETC/secrets.env ]]; then
     if [[ -f $SELF_REPO/secrets.env ]]; then run install -m 600 -o root -g root "$SELF_REPO/secrets.env" "$ETC/secrets.env"
     else run install -m 600 -o root -g root "$DEPLOY/config/secrets.env.example" "$ETC/secrets.env"

@@ -5,7 +5,7 @@ use std::rc::Rc;
 use super::cache::Memo;
 use super::palette::*;
 use crate::gfx::{pyround, Img, Mask, Rgb};
-use crate::pyrandom::PyRandom;
+use crate::scene_rng::SceneRng;
 use crate::state::Condition;
 
 type Sprite = (Img, Mask);
@@ -127,7 +127,7 @@ fn layers(eq: i32, cond: Condition) -> Rc<Vec<Deck>> {
             let (light, shade) = palette(eq, cond);
             let mut decks = Vec::new();
             for (seed, rows, speed, tint) in [(31u64, 7i32, 1.5, 0.0), (47, 10, 2.8, 0.3)] {
-                let mut rng = PyRandom::new(seed);
+                let mut rng = SceneRng::new(seed);
                 let (w, h) = (W as i32, rows + 3);
                 let mut mask = Mask::new(w as usize, h as usize, 0);
                 let mut rgb = Img::new(w as usize, h as usize, shade);

@@ -11,7 +11,7 @@ use std::rc::Rc;
 use super::cache::Memo;
 use super::palette::*;
 use crate::gfx::{line_points, pyround, Img, Mask, Rgb};
-use crate::pyrandom::PyRandom;
+use crate::scene_rng::SceneRng;
 use crate::state::Condition;
 
 const SEED: u64 = 64281;
@@ -134,7 +134,7 @@ fn foliage(u: f64, weights: &[(Rgb, f64)]) -> Rgb {
     weights[weights.len() - 1].0
 }
 
-fn profile(rng: &mut PyRandom, base: i32, peaks: Peaks) -> Vec<i32> {
+fn profile(rng: &mut SceneRng, base: i32, peaks: Peaks) -> Vec<i32> {
     (0..W as i32)
         .map(|x| {
             let mut h = f64::NEG_INFINITY;
@@ -163,7 +163,7 @@ thread_local! {
 fn shapes() -> Rc<Shapes> {
     SHAPES.with(|m| {
         m.get((), || {
-            let mut rng = PyRandom::new(SEED);
+            let mut rng = SceneRng::new(SEED);
             let ridges = RIDGES
                 .iter()
                 .map(|&(base, peaks, fol)| (profile(&mut rng, base, peaks), fol))
@@ -196,7 +196,7 @@ fn big_tree(w: i32, h: i32, seed: u64, v: f64) -> Rc<Tree> {
 }
 
 fn build_tree(w: i32, h: i32, seed: u64, v: f64) -> Tree {
-    let mut rng = PyRandom::new(seed);
+    let mut rng = SceneRng::new(seed);
     let (wf, hf) = (w as f64, h as f64);
     let mut clusters: Vec<(f64, f64, f64, f64, f64)> = Vec::new();
     for _ in 0..(w * h / 9) {

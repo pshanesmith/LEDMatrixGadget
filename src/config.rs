@@ -295,12 +295,10 @@ impl<'a> Section<'a> {
     }
 }
 
-const DISPLAY_KEYS: [&str; 17] = [
+const DISPLAY_KEYS: [&str; 16] = [
     "rows", "cols", "chain_length", "parallel", "hardware_mapping", "gpio_slowdown", "pwm_bits",
     "pwm_lsb_nanoseconds", "limit_refresh_hz", "row_address_type", "multiplexing", "rgb_sequence",
-    "brightness", "max_brightness", "scene_fps",
-    // Left over from the Python version (it chose Pillow's image copy path); accepted and ignored.
-    "safe_image_copy", "drop_privileges",
+    "brightness", "max_brightness", "scene_fps", "drop_privileges",
 ];
 const LOCATION_KEYS: [&str; 5] = ["latitude", "longitude", "postal_code", "label", "units"];
 const WEATHER_KEYS: [&str; 1] = ["refresh_seconds"];
@@ -500,8 +498,9 @@ mod tests {
     }
 
     #[test]
-    fn old_python_keys_are_still_accepted() {
-        assert!(build("[display]\nsafe_image_copy = true", &[]).is_ok());
+    fn the_old_safe_image_copy_key_is_rejected_like_any_unknown_key() {
+        let e = build("[display]\nsafe_image_copy = true", &[]).unwrap_err();
+        assert!(e.0.contains("safe_image_copy"), "{e}");
     }
 
     #[test]

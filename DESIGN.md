@@ -81,7 +81,7 @@ Procedural pixel art with no image assets. Layers, back to front:
 - **Cross-fade:** `SceneRenderer` remembers the last drawn state so a condition change blends into the new picture over 2 s; a backwards or over-5-second jump in time resets without fading.
 - **Ambient motion:** a clear sky once looked frozen (0% of scene pixels changed over 10 s), so stars twinkle at individual rates, the sun's eight rays alternate twice a second, and one cloud always drifts.
 - **Cost:** a scene frame renders in well under a millisecond on a laptop (release build; the Python version needed 3-5 ms there); the Pi Zero 2 W has not been measured yet. The budget is 66 ms at 15 fps.
-- **Same picture as the Python original:** the shapes use a Mersenne Twister that reproduces Python's `random.Random` (`pyrandom.rs`), rounding follows Python's round-half-to-even, and the drawing primitives follow Pillow's (ellipse outline tracing, mask blending). The tests compare more than 50 scene frames and the widget screens, made by the Python version, pixel for pixel (`tests/golden/`).
+- **Same picture as the Python original:** the shapes use a Mersenne Twister that reproduces Python's `random.Random` (`scene_rng.rs`), rounding follows Python's round-half-to-even, and the drawing primitives follow Pillow's (ellipse outline tracing, mask blending). The tests compare more than 50 scene frames and the widget screens, made by the Python version, pixel for pixel (`tests/golden/`).
 - Wind from the forecast biases rain, snow and cloud drift.
 
 ## 5. Data sources
@@ -141,7 +141,7 @@ The user enters a ZIP or postal code; `matrix-geocode ZIP [--country US] [--unit
 
 **Runner (`runner.rs`).** Builds an `AppState` (clock in the forecast location's timezone, latest weather, latest home snapshot) every frame and draws it through the `Compositor`, which calls one drawer per layout region. Slow frames are dropped, never queued. A widget panic is caught: the last good frame stays up and the failure is logged; after about 10 s of continuous failure the loop returns an error so systemd restarts the process. The loop notifies systemd (`READY=1`, `WATCHDOG=1` about once a second, `STOPPING=1`), logs a performance line every minute (render average and maximum, overruns, RSS, free memory, temperature, throttle flags), and re-reads the config on `SIGHUP`. The display is created first (privileges drop on hardware) and the network threads start afterwards, so a down network never delays the first frame.
 
-**Configuration** (`config.toml`; see `config/config.example.toml`): `[location]`, `[display]` (`rows`, `cols`, `chain_length`, `parallel`, `hardware_mapping`, `gpio_slowdown`, `pwm_bits`, `pwm_lsb_nanoseconds`, `limit_refresh_hz`, `row_address_type`, `multiplexing`, `rgb_sequence`, `brightness`, `max_brightness`, `scene_fps`, `drop_privileges`; the Python version's `safe_image_copy` is still accepted and ignored so existing files keep loading), `[weather]`, `[homeassistant]` (`url`, `poll_seconds`, `gates`, `exclude_locks`, `exclude_lights`, `exclude_updates`, `power_tier_entity`). Unknown keys are rejected. `MATRIX_HA_URL`, `MATRIX_HA_TOKEN` and `MATRIX_DROP_PRIVILEGES` come from the environment. `matrix-set-config` changes one value safely (idempotent, repairs duplicate sections, validates before saving).
+**Configuration** (`config.toml`; see `config/config.example.toml`): `[location]`, `[display]` (`rows`, `cols`, `chain_length`, `parallel`, `hardware_mapping`, `gpio_slowdown`, `pwm_bits`, `pwm_lsb_nanoseconds`, `limit_refresh_hz`, `row_address_type`, `multiplexing`, `rgb_sequence`, `brightness`, `max_brightness`, `scene_fps`, `drop_privileges`; `safe_image_copy` from the Python version is no longer known and is rejected, and the installer removes it from an existing config), `[weather]`, `[homeassistant]` (`url`, `poll_seconds`, `gates`, `exclude_locks`, `exclude_lights`, `exclude_updates`, `power_tier_entity`). Unknown keys are rejected. `MATRIX_HA_URL`, `MATRIX_HA_TOKEN` and `MATRIX_DROP_PRIVILEGES` come from the environment. `matrix-set-config` changes one value safely (idempotent, repairs duplicate sections, validates before saving).
 
 **Repository layout**
 
@@ -152,7 +152,7 @@ tools/        test-matrix.sh  cross-build.sh  package-release.sh  health-check.s
 .github/workflows/  ci.yml  release.yml
 src/
   lib.rs  main.rs (matrix-display)  runner.rs  compositor.rs  config.rs  state.rs  layout.rs
-  forecast.rs  samples.rs  gfx.rs  pyrandom.rs  util.rs  setconfig.rs  hadiscover.rs
+  forecast.rs  samples.rs  gfx.rs  scene_rng.rs  util.rs  setconfig.rs  hadiscover.rs
   display/{mod,emulator,hardware,pattern}.rs   data/{weather,geocode,homeassistant}.rs
   scene/{mod,sky,mountains,clouds,particles,palette,digits,cache}.rs
   ui/{fonts,icons,widgets,variants}.rs
