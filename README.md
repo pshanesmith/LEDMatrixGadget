@@ -43,8 +43,8 @@ The script runs as root, so you may prefer to read it first: `curl -fsSLO <same 
 `sudo bash install.sh`. A private repository cannot use the plain download (see
 [docs/operations.md](docs/operations.md)).
 
-**First time on a fresh Pi:** the panel needs the on-board sound driver off and one CPU core reserved. The installer
-will stop if the sound driver is still loaded. Run `sudo /opt/matrix/setup/02-matrix-setup.sh --apply` (and
+**Before the first install** (a Pi that has not been set up for this panel yet): the panel needs the on-board sound
+driver off and one CPU core reserved. The installer will stop if the sound driver is still loaded. Run `sudo /opt/matrix/setup/02-matrix-setup.sh --apply` (and
 `01-pi-setup.sh --apply` if you also want the slimmed-down, self-updating Pi described in DESIGN.md), reboot, then run
 the installer again.
 
