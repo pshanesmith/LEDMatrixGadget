@@ -7,12 +7,14 @@
 #
 # Options: --repo URL    GitHub clone URL (default: the 'origin' of the checkout you run this from)
 #          --ref NAME    branch or tag to deploy (default: main)
-#          --rebuild     rebuild the panel library instead of reusing a finished build from the checkout
+#          --binary PATH install a prebuilt matrix-display (from tools/cross-build.sh) instead of compiling here
+#          --rebuild     compile from scratch instead of reusing the previous build
 #          --no-start    install and enable but do not start now
 #          --no-drop     keep running as root (skip the privilege drop)
 #          --uninstall   stop and remove the service (keeps /opt/matrix, /etc/matrix and the state dir)
 #          --yes         skip confirmation prompts
-# Layout:  /opt/matrix        clone of the repository, with .venv/ and vendor/ inside (root-owned, world-readable)
+# Layout:  /opt/matrix        clone of the repository, with target/ (the build) and bin/ (the installed programs)
+#                             inside (root-owned, world-readable)
 #          /etc/matrix        config.toml, secrets.env (0600), deploy_key (0600, read-only deploy key)
 #          /var/lib/matrix-display   weather / Home Assistant cache
 # For a PRIVATE repository use an SSH URL (git@github.com:USER/REPO.git): the script creates a deploy key and
@@ -28,25 +30,26 @@ main() {
   local DEPLOY=${MATRIX_DEPLOY_DIR:-/opt/matrix} REF=${MATRIX_REF:-main} URL=${MATRIX_REPO_URL:-}
   local ETC=${ETC_DIR:-/etc/matrix} STATE=${STATE_DIR_PATH:-/var/lib/matrix-display}
   local UNIT=/etc/systemd/system/matrix-display.service KEY
-  local START=1 UNINSTALL=0 REBUILD=0 NODROP=0
+  local START=1 UNINSTALL=0 REBUILD=0 NODROP=0 BINARY=
   ASSUME_YES=0
   while (( $# )); do
     case $1 in
       --apply) DRY_RUN=0 ;;
       --repo) URL=$2; shift ;;
       --ref) REF=$2; shift ;;
+      --binary) BINARY=$2; shift ;;
       --rebuild) REBUILD=1 ;;
       --no-start) START=0 ;;
       --no-drop) NODROP=1 ;;
       --uninstall) UNINSTALL=1 ;;
       --yes) ASSUME_YES=1 ;;
-      -h|--help) sed -n '2,23p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; return 0 ;;
+      -h|--help) sed -n '2,21p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; return 0 ;;
       *) die "unknown option: $1 (try --help)" ;;
     esac
     shift
   done
   KEY=$ETC/deploy_key
-  local PY=$DEPLOY/.venv/bin/python
+  local BIN=$DEPLOY/bin/matrix-display TARGET_DIR=${CARGO_TARGET_DIR:-$DEPLOY/target}
 
   require_pi
   require_root
@@ -94,45 +97,29 @@ main() {
   run chown -R root:root "$DEPLOY"
   run chmod -R go+rX "$DEPLOY"
 
-  step "Python environment and panel library"
-  # Reuse a finished build from the checkout this script was started from (a rebuild takes 10+ minutes
-  # on this Pi and risks exhausting memory); otherwise build with setup/02-matrix-setup.sh.
-  local reuse=""
-  if (( ! REBUILD )) && [[ $SELF_REPO != "$DEPLOY" && -x $SELF_REPO/.venv/bin/python ]] \
-      && "$SELF_REPO/.venv/bin/python" -c 'import rgbmatrix' 2>/dev/null \
-      && [[ -x $SELF_REPO/vendor/rpi-rgb-led-matrix/examples-api-use/demo ]]; then
-    reuse=$SELF_REPO
-  fi
-  if [[ ! -x $PY ]]; then run python3 -m venv --system-site-packages "$DEPLOY/.venv"; fi
-  if [[ -x $PY ]] && "$PY" -c 'import rgbmatrix' 2>/dev/null; then
-    echo "  rgbmatrix already installed in $DEPLOY/.venv"
-  elif [[ -n $reuse ]]; then
-    echo "  reusing the finished build from $reuse"
-    if [[ ! -d $DEPLOY/vendor ]]; then run cp -a "$reuse/vendor" "$DEPLOY/vendor"; fi
-    if (( ! DRY_RUN )); then
-      sp_old=$(echo "$reuse"/.venv/lib/python3*/site-packages)
-      sp_new=$(echo "$DEPLOY"/.venv/lib/python3*/site-packages)
-      cp -a "$sp_old"/rgbmatrix "$sp_old"/rgbmatrix-*.dist-info "$sp_new"/
-      chown -R root:root "$DEPLOY/vendor" "$sp_new"
-    else
-      echo "  [dry-run] copy rgbmatrix package files into the new virtualenv"
-    fi
+  step "Build and install the program"
+  # The panel driver (the pure Rust rpi-led-panel crate) is compiled into the binary; nothing else is
+  # installed system-wide. A source build needs about 1 GB of RAM plus swap and
+  # 15+ minutes on a Zero 2 W: tools/cross-build.sh on another machine is much faster; pass its output with --binary.
+  local built=$TARGET_DIR/pi/matrix-display
+  if [[ -n $BINARY ]]; then
+    [[ -x $BINARY ]] || die "--binary $BINARY is not an executable file"
+    echo "  using the prebuilt binary $BINARY"
+    built=$BINARY
   else
-    run "$DEPLOY/setup/02-matrix-setup.sh" --apply --yes --only deps,library,python
+    if ! command -v cargo >/dev/null; then run "$DEPLOY/setup/02-matrix-setup.sh" --apply --yes --only deps; fi
+    if (( REBUILD )); then run cargo clean --manifest-path "$DEPLOY/Cargo.toml" --target-dir "$TARGET_DIR" --profile pi; fi
+    run nice -n 10 env CARGO_TARGET_DIR="$TARGET_DIR" cargo build --manifest-path "$DEPLOY/Cargo.toml" \
+        --profile pi --features hardware --locked --bins -j1
   fi
-  # Editable install: a later 'git pull' is all an update needs; no pip packages come from the internet
-  # except the build backend (Pillow is the system package, rgbmatrix is built from the pinned source).
-  run "$PY" -m pip install -q -e "$DEPLOY"
+  run install -D -m 755 "$built" "$BIN"
+  # The helper programs sit next to the display binary (the build directory, or --binary's directory).
+  local tool
+  for tool in matrix-hello matrix-geocode matrix-set-config matrix-ha-discover; do
+    if [[ -x $(dirname "$built")/$tool ]]; then run install -D -m 755 "$(dirname "$built")/$tool" "$DEPLOY/bin/$tool"; fi
+  done
   if (( ! DRY_RUN )); then
-    "$PY" -c 'import matrix_display, rgbmatrix, PIL; print("  imports OK, Pillow from", PIL.__file__)' \
-      || die "the deployed environment cannot import the app or the panel bindings"
-  fi
-
-  # tools/health-check.sh compares this with the installed Pillow (the panel bindings depend on its layout).
-  if (( ! DRY_RUN )) && [[ ! -f /var/lib/matrix-display/pillow-version ]]; then
-    install -d -m 755 /var/lib/matrix-display
-    dpkg-query -W -f='${Version}\n' python3-pil > /var/lib/matrix-display/pillow-version
-    echo "  recorded the Pillow version of this build: $(cat /var/lib/matrix-display/pillow-version)"
+    "$BIN" --version || die "the installed program does not run"
   fi
 
   step "Preflight"
@@ -156,7 +143,7 @@ main() {
   run install -d -m 755 -o daemon -g daemon "$STATE"
 
   step "Privilege drop check"
-  # After GPIO setup the panel library drops to user 'daemon'; code imported later must stay readable.
+  # After GPIO setup the panel library drops to user 'daemon'; config reloads and the cache still need to be readable.
   local DROP_ENV="" blocked="" d=$DEPLOY
   [[ -d $d ]] || d=$(dirname "$DEPLOY")
   while [[ $d != / ]]; do
@@ -173,7 +160,7 @@ main() {
 
   step "systemd unit"
   local unit
-  unit=$(sed -e "s#@REPO@#$DEPLOY#g" -e "s#@PYTHON@#$PY#g" -e "s#@DROP_ENV@#$DROP_ENV#g" "$SELF_REPO/systemd/matrix-display.service")
+  unit=$(sed -e "s#@REPO@#$DEPLOY#g" -e "s#@BIN@#$BIN#g" -e "s#@DROP_ENV@#$DROP_ENV#g" "$SELF_REPO/systemd/matrix-display.service")
   write_file "$UNIT" "$unit"
   write_file /etc/systemd/system/matrix-health.service \
     "$(sed -e "s#@REPO@#$DEPLOY#g" "$SELF_REPO/systemd/matrix-health.service")"

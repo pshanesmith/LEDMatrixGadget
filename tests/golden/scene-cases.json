@@ -1,0 +1,693 @@
+[
+ {
+  "file": "scene-clear_day-noon.png",
+  "sample": "clear_day",
+  "date": [
+   2026,
+   10,
+   23,
+   12,
+   0
+  ],
+  "t": 3.0
+ },
+ {
+  "file": "scene-clear_night-noon.png",
+  "sample": "clear_night",
+  "date": [
+   2026,
+   10,
+   23,
+   12,
+   0
+  ],
+  "t": 3.0
+ },
+ {
+  "file": "scene-partly_cloudy-noon.png",
+  "sample": "partly_cloudy",
+  "date": [
+   2026,
+   10,
+   23,
+   12,
+   0
+  ],
+  "t": 3.0
+ },
+ {
+  "file": "scene-overcast-noon.png",
+  "sample": "overcast",
+  "date": [
+   2026,
+   10,
+   23,
+   12,
+   0
+  ],
+  "t": 3.0
+ },
+ {
+  "file": "scene-fog-noon.png",
+  "sample": "fog",
+  "date": [
+   2026,
+   10,
+   23,
+   12,
+   0
+  ],
+  "t": 3.0
+ },
+ {
+  "file": "scene-rain_then_snow-noon.png",
+  "sample": "rain_then_snow",
+  "date": [
+   2026,
+   10,
+   23,
+   12,
+   0
+  ],
+  "t": 3.0
+ },
+ {
+  "file": "scene-snow-noon.png",
+  "sample": "snow",
+  "date": [
+   2026,
+   10,
+   23,
+   12,
+   0
+  ],
+  "t": 3.0
+ },
+ {
+  "file": "scene-thunder-noon.png",
+  "sample": "thunder",
+  "date": [
+   2026,
+   10,
+   23,
+   12,
+   0
+  ],
+  "t": 3.0
+ },
+ {
+  "file": "scene-clear_day-0115.png",
+  "sample": "clear_day",
+  "date": [
+   2026,
+   1,
+   15,
+   12,
+   0
+  ],
+  "t": 1.5
+ },
+ {
+  "file": "scene-clear_day-0420.png",
+  "sample": "clear_day",
+  "date": [
+   2026,
+   4,
+   20,
+   12,
+   0
+  ],
+  "t": 1.5
+ },
+ {
+  "file": "scene-clear_day-0715.png",
+  "sample": "clear_day",
+  "date": [
+   2026,
+   7,
+   15,
+   12,
+   0
+  ],
+  "t": 1.5
+ },
+ {
+  "file": "scene-clear_day-1225.png",
+  "sample": "clear_day",
+  "date": [
+   2026,
+   12,
+   25,
+   12,
+   0
+  ],
+  "t": 1.5
+ },
+ {
+  "file": "scene-rain_then_snow-0115.png",
+  "sample": "rain_then_snow",
+  "date": [
+   2026,
+   1,
+   15,
+   12,
+   0
+  ],
+  "t": 1.5
+ },
+ {
+  "file": "scene-rain_then_snow-0420.png",
+  "sample": "rain_then_snow",
+  "date": [
+   2026,
+   4,
+   20,
+   12,
+   0
+  ],
+  "t": 1.5
+ },
+ {
+  "file": "scene-rain_then_snow-0715.png",
+  "sample": "rain_then_snow",
+  "date": [
+   2026,
+   7,
+   15,
+   12,
+   0
+  ],
+  "t": 1.5
+ },
+ {
+  "file": "scene-rain_then_snow-1225.png",
+  "sample": "rain_then_snow",
+  "date": [
+   2026,
+   12,
+   25,
+   12,
+   0
+  ],
+  "t": 1.5
+ },
+ {
+  "file": "scene-snow-0115.png",
+  "sample": "snow",
+  "date": [
+   2026,
+   1,
+   15,
+   12,
+   0
+  ],
+  "t": 1.5
+ },
+ {
+  "file": "scene-snow-0420.png",
+  "sample": "snow",
+  "date": [
+   2026,
+   4,
+   20,
+   12,
+   0
+  ],
+  "t": 1.5
+ },
+ {
+  "file": "scene-snow-0715.png",
+  "sample": "snow",
+  "date": [
+   2026,
+   7,
+   15,
+   12,
+   0
+  ],
+  "t": 1.5
+ },
+ {
+  "file": "scene-snow-1225.png",
+  "sample": "snow",
+  "date": [
+   2026,
+   12,
+   25,
+   12,
+   0
+  ],
+  "t": 1.5
+ },
+ {
+  "file": "scene-clear_day-0530.png",
+  "sample": "clear_day",
+  "date": [
+   2026,
+   10,
+   23,
+   5,
+   30
+  ],
+  "t": 4.2
+ },
+ {
+  "file": "scene-clear_day-0745.png",
+  "sample": "clear_day",
+  "date": [
+   2026,
+   10,
+   23,
+   7,
+   45
+  ],
+  "t": 4.2
+ },
+ {
+  "file": "scene-clear_day-1830.png",
+  "sample": "clear_day",
+  "date": [
+   2026,
+   10,
+   23,
+   18,
+   30
+  ],
+  "t": 4.2
+ },
+ {
+  "file": "scene-clear_day-2130.png",
+  "sample": "clear_day",
+  "date": [
+   2026,
+   10,
+   23,
+   21,
+   30
+  ],
+  "t": 4.2
+ },
+ {
+  "file": "scene-clear_day-2350.png",
+  "sample": "clear_day",
+  "date": [
+   2026,
+   10,
+   23,
+   23,
+   50
+  ],
+  "t": 4.2
+ },
+ {
+  "file": "scene-partly_cloudy-0530.png",
+  "sample": "partly_cloudy",
+  "date": [
+   2026,
+   10,
+   23,
+   5,
+   30
+  ],
+  "t": 4.2
+ },
+ {
+  "file": "scene-partly_cloudy-0745.png",
+  "sample": "partly_cloudy",
+  "date": [
+   2026,
+   10,
+   23,
+   7,
+   45
+  ],
+  "t": 4.2
+ },
+ {
+  "file": "scene-partly_cloudy-1830.png",
+  "sample": "partly_cloudy",
+  "date": [
+   2026,
+   10,
+   23,
+   18,
+   30
+  ],
+  "t": 4.2
+ },
+ {
+  "file": "scene-partly_cloudy-2130.png",
+  "sample": "partly_cloudy",
+  "date": [
+   2026,
+   10,
+   23,
+   21,
+   30
+  ],
+  "t": 4.2
+ },
+ {
+  "file": "scene-partly_cloudy-2350.png",
+  "sample": "partly_cloudy",
+  "date": [
+   2026,
+   10,
+   23,
+   23,
+   50
+  ],
+  "t": 4.2
+ },
+ {
+  "file": "scene-clear_night-0530.png",
+  "sample": "clear_night",
+  "date": [
+   2026,
+   10,
+   23,
+   5,
+   30
+  ],
+  "t": 4.2
+ },
+ {
+  "file": "scene-clear_night-0745.png",
+  "sample": "clear_night",
+  "date": [
+   2026,
+   10,
+   23,
+   7,
+   45
+  ],
+  "t": 4.2
+ },
+ {
+  "file": "scene-clear_night-1830.png",
+  "sample": "clear_night",
+  "date": [
+   2026,
+   10,
+   23,
+   18,
+   30
+  ],
+  "t": 4.2
+ },
+ {
+  "file": "scene-clear_night-2130.png",
+  "sample": "clear_night",
+  "date": [
+   2026,
+   10,
+   23,
+   21,
+   30
+  ],
+  "t": 4.2
+ },
+ {
+  "file": "scene-clear_night-2350.png",
+  "sample": "clear_night",
+  "date": [
+   2026,
+   10,
+   23,
+   23,
+   50
+  ],
+  "t": 4.2
+ },
+ {
+  "file": "scene-fog-0530.png",
+  "sample": "fog",
+  "date": [
+   2026,
+   10,
+   23,
+   5,
+   30
+  ],
+  "t": 4.2
+ },
+ {
+  "file": "scene-fog-0745.png",
+  "sample": "fog",
+  "date": [
+   2026,
+   10,
+   23,
+   7,
+   45
+  ],
+  "t": 4.2
+ },
+ {
+  "file": "scene-fog-1830.png",
+  "sample": "fog",
+  "date": [
+   2026,
+   10,
+   23,
+   18,
+   30
+  ],
+  "t": 4.2
+ },
+ {
+  "file": "scene-fog-2130.png",
+  "sample": "fog",
+  "date": [
+   2026,
+   10,
+   23,
+   21,
+   30
+  ],
+  "t": 4.2
+ },
+ {
+  "file": "scene-fog-2350.png",
+  "sample": "fog",
+  "date": [
+   2026,
+   10,
+   23,
+   23,
+   50
+  ],
+  "t": 4.2
+ },
+ {
+  "file": "scene-thunder-0530.png",
+  "sample": "thunder",
+  "date": [
+   2026,
+   10,
+   23,
+   5,
+   30
+  ],
+  "t": 4.2
+ },
+ {
+  "file": "scene-thunder-0745.png",
+  "sample": "thunder",
+  "date": [
+   2026,
+   10,
+   23,
+   7,
+   45
+  ],
+  "t": 4.2
+ },
+ {
+  "file": "scene-thunder-1830.png",
+  "sample": "thunder",
+  "date": [
+   2026,
+   10,
+   23,
+   18,
+   30
+  ],
+  "t": 4.2
+ },
+ {
+  "file": "scene-thunder-2130.png",
+  "sample": "thunder",
+  "date": [
+   2026,
+   10,
+   23,
+   21,
+   30
+  ],
+  "t": 4.2
+ },
+ {
+  "file": "scene-thunder-2350.png",
+  "sample": "thunder",
+  "date": [
+   2026,
+   10,
+   23,
+   23,
+   50
+  ],
+  "t": 4.2
+ },
+ {
+  "file": "scene-clear_night-moon1010.png",
+  "sample": "clear_night",
+  "date": [
+   2026,
+   10,
+   10,
+   22,
+   0
+  ],
+  "t": 0.0
+ },
+ {
+  "file": "scene-clear_night-moon1018.png",
+  "sample": "clear_night",
+  "date": [
+   2026,
+   10,
+   18,
+   22,
+   0
+  ],
+  "t": 0.0
+ },
+ {
+  "file": "scene-clear_night-moon1026.png",
+  "sample": "clear_night",
+  "date": [
+   2026,
+   10,
+   26,
+   22,
+   0
+  ],
+  "t": 0.0
+ },
+ {
+  "file": "scene-clear_night-moon1102.png",
+  "sample": "clear_night",
+  "date": [
+   2026,
+   11,
+   2,
+   22,
+   0
+  ],
+  "t": 0.0
+ },
+ {
+  "file": "fade-clear-to-rain-mid.png",
+  "sequence": [
+   {
+    "sample": "clear_day",
+    "date": [
+     2026,
+     10,
+     23,
+     12,
+     0
+    ],
+    "t": 10.0
+   },
+   {
+    "sample": "rain_then_snow",
+    "date": [
+     2026,
+     10,
+     23,
+     12,
+     0
+    ],
+    "t": 10.5
+   },
+   {
+    "sample": "rain_then_snow",
+    "date": [
+     2026,
+     10,
+     23,
+     12,
+     0
+    ],
+    "t": 11.5
+   }
+  ]
+ },
+ {
+  "file": "fade-clear-to-rain-done.png",
+  "sequence": [
+   {
+    "sample": "clear_day",
+    "date": [
+     2026,
+     10,
+     23,
+     12,
+     0
+    ],
+    "t": 10.0
+   },
+   {
+    "sample": "rain_then_snow",
+    "date": [
+     2026,
+     10,
+     23,
+     12,
+     0
+    ],
+    "t": 10.5
+   },
+   {
+    "sample": "rain_then_snow",
+    "date": [
+     2026,
+     10,
+     23,
+     12,
+     0
+    ],
+    "t": 13.0
+   }
+  ]
+ },
+ {
+  "file": "fade-reset-on-jump.png",
+  "sequence": [
+   {
+    "sample": "clear_day",
+    "date": [
+     2026,
+     10,
+     23,
+     12,
+     0
+    ],
+    "t": 10.0
+   },
+   {
+    "sample": "snow",
+    "date": [
+     2026,
+     10,
+     23,
+     12,
+     0
+    ],
+    "t": 30.0
+   }
+  ]
+ }
+]

@@ -2,7 +2,7 @@
 
 Everyday commands (the service is `matrix-display`).
 
-**Where things live:** the code runs from `/opt/matrix`, a clone of the GitHub repository (with its own `.venv/` and `vendor/` inside); config and the token are in `/etc/matrix`; the weather and Home Assistant cache is in `/var/lib/matrix-display`. Your checkout in your home folder is for development only.
+**Where things live:** the code runs from `/opt/matrix`, a clone of the GitHub repository (with the build in `target/` and the installed programs in `bin/`); config and the token are in `/etc/matrix`; the weather and Home Assistant cache is in `/var/lib/matrix-display`. Your checkout in your home folder is for development only.
 
 **Inspecting the deployment:** `/opt/matrix` is root-owned, so use `sudo git -C /opt/matrix log --oneline` (without sudo git reports "dubious ownership").
 
@@ -20,8 +20,8 @@ Everyday commands (the service is `matrix-display`).
 
 ## Changing settings
 - **Edit `/etc/matrix/config.toml`** (a copy; the repo's `config/config.toml` is only the source used at install time), then `reload`.
-- **Location:** `python3 tools/geocode.py <ZIP>` updates `config/config.toml`; copy the `[location]` section into `/etc/matrix/config.toml`.
-- **Gates, lights, locks:** `python3 tools/ha-discover.py --toml` lists entities and prints a snippet for `[homeassistant]`. `exclude_lights` takes glob patterns on entity ids. `power_tier_entity` (a sensor reporting `discount`, `off_peak`, `on_peak` or `critical_peak`) adds the rate bolt to the bottom row.
+- **Location:** `matrix-geocode <ZIP>` (`cargo run --bin matrix-geocode -- <ZIP>` in a checkout) updates `config/config.toml`; copy the `[location]` section into `/etc/matrix/config.toml`.
+- **Gates, lights, locks:** `matrix-ha-discover --toml` lists entities and prints a snippet for `[homeassistant]`. `exclude_lights` takes glob patterns on entity ids. `power_tier_entity` (a sensor reporting `discount`, `off_peak`, `on_peak` or `critical_peak`) adds the rate bolt to the bottom row.
 - **Home Assistant URL** defaults to `http://homeassistant:8123`; change `[homeassistant].url`, or set `MATRIX_HA_URL` in `/etc/matrix/secrets.env`.
 - **Token:** only in `/etc/matrix/secrets.env` (`MATRIX_HA_TOKEN=`, mode 600, root). If it leaks, delete it in Home Assistant (profile > Security) and create a new one.
 - **Brightness:** `[display] brightness` (day) and `max_brightness` (hard ceiling, 70). After sunset the display is halved automatically. The supply is rated 4 A; do not raise the ceiling much.
@@ -31,7 +31,7 @@ The panel is refreshed by software timing, so flicker is a trade between colour 
 1. `pwm_bits = 10` (about 200 Hz), then `9` (about 400 Hz) if still visible. Fewer bits means slightly coarser dark gradients.
 2. `limit_refresh_hz = 150` (or a value below the stable rate) so the rate does not wander with CPU load.
 3. `gpio_slowdown = 3` if you also see shimmering lines or odd pixels.
-Set each value with the helper (safe to repeat, and it repairs duplicate `[display]` sections): `sudo python3 tools/set-config.py /etc/matrix/config.toml display pwm_bits 10`, then restart. Already ruled out: interrupts are kept off the reserved core, and `isolcpus` is active.
+Set each value with the helper (safe to repeat, and it repairs duplicate `[display]` sections): `sudo /opt/matrix/bin/matrix-set-config /etc/matrix/config.toml display pwm_bits 10`, then restart. Already ruled out: interrupts are kept off the reserved core, and `isolcpus` is active.
 
 ## What the panel shows
 Date; a scene with the current condition (sun/moon, clouds, rain, snow, fog, thunder, day/night) and the temperature; today's low and high; the next change in conditions within 24 h (or `STEADY 24H`); then lock, light and gate status. Locks: number of unlocked ones (red when nonzero, an amber `?` if one is offline). Lights: room lights on (status LEDs and groups are excluded). Gate: green closed, blinking red open, amber unknown. A dot in the bottom-right corner appears when data is stale (amber: Home Assistant older than 5 minutes; red: weather older than 3 hours).
@@ -66,11 +66,19 @@ The Pi upgrades itself nightly (`unattended-upgrades`): Debian security and stab
 
 The health check runs ten minutes after every boot and daily at 08:00; a failure shows in `systemctl --failed` and the journal.
 
-## Pillow upgrades
-Pillow upgrades with the rest of the system. The panel bindings' fast image path reads Pillow's internal memory layout, so frames are pushed through Pillow's public API instead (`[display] safe_image_copy = true`, the default), which a Pillow upgrade cannot break. It costs about 8 ms a frame; check the `render avg` figure in `journalctl -u matrix-display` after a change. If you ever set `safe_image_copy = false`, rebuild the bindings after any Pillow upgrade: `sudo ./setup/02-matrix-setup.sh --apply --rebuild` (10+ minutes; close Claude Code first).
+## Building and updating the program
+The display is a Rust program. Building it on the Pi (about 15+ minutes the first time, about 1 GB of RAM including swap) works but is slow; the easier way is to build on another machine and install the result:
+
+```bash
+./tools/cross-build.sh                                   # on the Mac; needs zig, cargo-zigbuild and the aarch64-unknown-linux-gnu target
+scp dist/matrix-display dist/matrix-hello pi:/tmp/
+ssh pi 'sudo /opt/matrix/setup/03-install-service.sh --apply --binary /tmp/matrix-display'
+```
+
+Without `--binary` the installer compiles in `/opt/matrix/target` (`cargo build --profile pi --features hardware`) and installs into `/opt/matrix/bin`. Later updates only rebuild what changed; `--rebuild` starts over. Check the `render avg` and `rss` figures in `journalctl -u matrix-display` after a change. Tools next to the service: `/opt/matrix/bin/matrix-geocode`, `matrix-set-config`, `matrix-ha-discover`, `matrix-hello`.
 
 ## Backups
-`sudo cp -a /etc/matrix ~/matrix-etc-backup` (contains the token; keep it private). The repository holds everything else; `config/config.toml`, `secrets.env`, `vendor/` and `.venv/` are gitignored, and `.githooks/pre-commit` blocks commits that contain a token (enable with `git config core.hooksPath .githooks`, already set).
+`sudo cp -a /etc/matrix ~/matrix-etc-backup` (contains the token; keep it private). The repository holds everything else; `config/config.toml`, `secrets.env`, `target/`, `bin/` and `dist/` are gitignored, and `.githooks/pre-commit` blocks commits that contain a token (enable with `git config core.hooksPath .githooks`, already set).
 
 ## Rebuilding from scratch
-`setup/01-pi-setup.sh --apply`, reboot, `setup/02-matrix-setup.sh --apply`, reboot, `tools/test-matrix.sh`, then `setup/03-install-service.sh --apply`.
+`setup/01-pi-setup.sh --apply`, reboot, `setup/02-matrix-setup.sh --apply` (installs the build tools, builds, edits the boot settings), reboot, `tools/test-matrix.sh`, then `setup/03-install-service.sh --apply` (or `--binary` with a cross-built program).

@@ -10,10 +10,9 @@ NotifyAccess=main
 # Secrets (MATRIX_HA_TOKEN) come only from this file; it is root-only (0600).
 EnvironmentFile=-/etc/matrix/secrets.env
 Environment=MATRIX_STATE_DIR=/var/lib/matrix-display
-Environment=PYTHONUNBUFFERED=1
 @DROP_ENV@
 WorkingDirectory=/var/lib/matrix-display
-ExecStart=@PYTHON@ -m matrix_display --config /etc/matrix/config.toml
+ExecStart=@BIN@ --config /etc/matrix/config.toml
 ExecReload=/bin/kill -HUP $MAINPID
 
 # The panel needs root for GPIO timing; the library then drops to an unprivileged user.

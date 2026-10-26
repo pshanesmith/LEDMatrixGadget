@@ -1,0 +1,72 @@
+[package]
+name = "matrix-display"
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Home status display for a 64x64 RGB LED matrix (date, weather scene, Home Assistant)"
+license = "GPL-3.0-only"
+default-run = "matrix-display"
+
+[lib]
+name = "matrix_display"
+path = "src/lib.rs"
+
+[[bin]]
+name = "matrix-display"
+path = "src/main.rs"
+
+[[bin]]
+name = "matrix-preview"
+path = "src/bin/preview.rs"
+
+[[bin]]
+name = "matrix-geocode"
+path = "src/bin/geocode.rs"
+
+[[bin]]
+name = "matrix-set-config"
+path = "src/bin/set_config.rs"
+
+[[bin]]
+name = "matrix-ha-discover"
+path = "src/bin/ha_discover.rs"
+
+[[bin]]
+name = "matrix-hello"
+path = "src/bin/hello.rs"
+required-features = ["hardware"]
+
+[features]
+default = []
+# Drive the real panel through the rpi-led-panel crate (a pure Rust port of hzeller's driver).
+# Off by default so the plain build has no GPIO code; the Pi build turns it on.
+hardware = ["dep:rpi-led-panel"]
+
+[dependencies]
+anyhow = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+clap = { version = "4", features = ["derive"] }
+env_logger = { version = "0.11", default-features = false, features = ["humantime"] }
+image = { version = "0.25", default-features = false, features = ["png", "gif"] }
+log = "0.4"
+rpassword = "7"
+serde_json = "1"
+signal-hook = "0.3"
+toml = "0.8"
+ureq = { version = "2", features = ["json"] }
+rpi-led-panel = { version = "0.9", default-features = false, optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+
+# For building on the Pi itself (about 460 MB of RAM): no LTO and more, smaller codegen units use
+# far less memory at the cost of a slightly slower binary.
+[profile.pi]
+inherits = "release"
+lto = false
+codegen-units = 16
