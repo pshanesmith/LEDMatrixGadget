@@ -81,4 +81,4 @@ Without `--binary` the installer compiles in `/opt/matrix/target` (`cargo build 
 `sudo cp -a /etc/matrix ~/matrix-etc-backup` (contains the token; keep it private). The repository holds everything else; `config/config.toml`, `secrets.env`, `target/`, `bin/` and `dist/` are gitignored, and `.githooks/pre-commit` blocks commits that contain a token (enable with `git config core.hooksPath .githooks`, already set).
 
 ## Rebuilding from scratch
-`setup/01-pi-setup.sh --apply`, reboot, `setup/02-matrix-setup.sh --apply` (installs the build tools, builds, edits the boot settings), reboot, `tools/test-matrix.sh`, then `setup/03-install-service.sh --apply` (or `--binary` with a cross-built program).
+`setup/01-pi-setup.sh --apply`, reboot, `setup/02-matrix-setup.sh --apply` (edits the boot settings; add `--build` to also install the build tools and compile on the Pi), reboot, `tools/test-matrix.sh`, then `setup/03-install-service.sh --apply` (or `--binary` with a cross-built program).

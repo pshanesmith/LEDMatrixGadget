@@ -180,7 +180,7 @@ Idempotent; **dry run by default** (`--apply` needs root and a typed confirmatio
 
 ## 8. Building the display and boot settings (`setup/02-matrix-setup.sh`)
 
-Automates the system side of Adafruit's "Install Manually" guide, adapted to Debian 13. Idempotent, dry run by default. Steps: `deps build boot verify`.
+Automates the system side of Adafruit's "Install Manually" guide, adapted to Debian 13. Idempotent, dry run by default. Steps: `boot verify` by default; `--build` adds `deps build` (compiling on the Pi is opt-in, because cross-building is the recommended route).
 
 - **Panel library:** nothing is cloned or installed system-wide. The `rpi-led-panel` crate is a pure Rust port of hzeller's driver, so there is no C++ to build, no bindings and no `make`; it maps `/dev/mem` and runs its refresh loop on its own thread (the reserved core). `Cargo.lock` pins the version. `--features hardware` turns it on; the crate is Linux-only, so the default build (emulator only) is what builds and tests on a Mac.
 - **Dependencies:** `gcc libc6-dev cargo rustc` from Debian (Rust 1.85 on Debian 13, which is the minimum the crate needs). `gcc` is the linker and compiles the TLS library's C parts; there is no C++ and no `make`. A Pi that only receives a cross-built binary needs none of them.

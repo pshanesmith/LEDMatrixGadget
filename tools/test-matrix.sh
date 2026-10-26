@@ -30,7 +30,7 @@ ask() {                         # ask "question" -> returns 0 for yes
 }
 
 (( EUID == 0 )) || fail "run with sudo (the panel driver needs GPIO access)"
-[[ -n $HELLO ]] || fail "matrix-hello not found; run setup/02-matrix-setup.sh --apply (or tools/cross-build.sh)"
+[[ -n $HELLO ]] || fail "matrix-hello not found; build it with tools/cross-build.sh, or on the Pi with setup/02-matrix-setup.sh --apply --build"
 lsmod | grep -q '^snd_bcm2835' && fail "snd_bcm2835 is loaded; reboot after setup/02-matrix-setup.sh"
 
 echo "== pre-checks"

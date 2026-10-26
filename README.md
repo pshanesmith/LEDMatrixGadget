@@ -64,7 +64,7 @@ sudo systemctl reload matrix-display           # re-read /etc/matrix/config.toml
 sudo ./setup/03-install-service.sh --uninstall
 ```
 
-Without `--binary` the installer compiles on the Pi (`setup/02-matrix-setup.sh` installs the build tools first).
+Without `--binary` the installer compiles on the Pi, installing the build tools first if they are missing.
 A private repository needs an SSH URL (`git@github.com:USER/LEDMatrixGadget.git`): the installer creates a read-only deploy key and prints the public half to add under the repository's Settings > Deploy keys. See [docs/operations.md](docs/operations.md).
 
 **Memory:** the Pi has about 460 MB of RAM. Close Claude Code and other large programs before starting the display.

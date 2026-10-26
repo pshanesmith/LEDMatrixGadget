@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Build the display (Rust, with the pure Rust rpi-led-panel crate as the panel driver), free the
-# hardware from the sound driver, and reserve a CPU core for the panel refresh.
+# Free the hardware from the sound driver and reserve a CPU core for the panel refresh. With --build it
+# also installs the Rust build tools and compiles the display (pure Rust, rpi-led-panel as the panel driver).
 # Automates the system side of https://learn.adafruit.com/adafruit-rgb-matrix-bonnet-for-raspberry-pi/install-manually
 # (updated for Debian 13).
 #
@@ -8,9 +8,12 @@
 #   sudo ./setup/02-matrix-setup.sh --apply    do it
 #
 # Options: --yes  --only a,b  --skip a,b
+#          --build       also install the build tools and compile on the Pi (steps deps and build);
+#                        by default nothing is compiled here: use tools/cross-build.sh and
+#                        setup/03-install-service.sh --binary
 #          --no-isolcpus keep all four cores for the OS
 #          --rebuild     discard the previous build and compile everything again
-# Steps:   deps build boot verify
+# Steps:   boot verify (default)   deps build (with --build)
 # Never reboots. Safe to run repeatedly.
 #
 # The panel library is not cloned or pinned here: it is a Rust crate and Cargo.lock pins the version.
@@ -25,8 +28,7 @@ REPO=$(dirname "$HERE")
 source "$HERE/lib/common.sh"
 
 BOOT_DIR=${BOOT_DIR:-/boot/firmware}
-ISOLCPUS=1; REBUILD=0; ASSUME_YES=0; ONLY=""; SKIP=""
-ALL_STEPS=(deps build boot verify)
+ISOLCPUS=1; REBUILD=0; ASSUME_YES=0; ONLY=""; SKIP=""; BUILD=0
 # gcc is the linker rustc calls and compiles the TLS library's C parts (no g++ or make: the panel driver is
 # pure Rust); cargo and rustc come from Debian (Rust 1.85 on Debian 13, the minimum the project needs).
 DEPS=(gcc libc6-dev cargo rustc)
@@ -40,8 +42,9 @@ while (( $# )); do
     --only) ONLY=$2; shift ;;
     --skip) SKIP=$2; shift ;;
     --no-isolcpus) ISOLCPUS=0 ;;
-    --rebuild) REBUILD=1 ;;
-    -h|--help) sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --build) BUILD=1 ;;
+    --rebuild) REBUILD=1; BUILD=1 ;;
+    -h|--help) sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "unknown option: $1 (try --help)" ;;
   esac
   shift
@@ -110,7 +113,7 @@ step_verify() {
   else
     echo "  display binary: not built yet (step 'build')"
   fi
-  echo "  next: sudo reboot, then  ./tools/test-matrix.sh"
+  echo "  next: sudo reboot, then  ./tools/test-matrix.sh (needs matrix-hello: from tools/cross-build.sh or --build)"
 }
 
 require_pi
@@ -121,6 +124,8 @@ else
   mkdir -p "$BACKUP_DIR"; exec > >(tee -a /var/log/matrix-setup.log) 2>&1
   confirm "This builds the display, blacklists the sound driver, and edits $BOOT_DIR/cmdline.txt."
 fi
+ALL_STEPS=(boot verify)
+(( BUILD )) && ALL_STEPS=(deps build boot verify)
 for s in "${ALL_STEPS[@]}"; do if want "$s"; then "step_$s"; fi; done
 echo
 if (( DRY_RUN )); then info "dry run complete; nothing changed."; else info "done. Reboot, then run tools/test-matrix.sh"; fi

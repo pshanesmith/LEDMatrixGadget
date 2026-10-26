@@ -107,7 +107,7 @@ main() {
     echo "  using the prebuilt binary $BINARY"
     built=$BINARY
   else
-    if ! command -v cargo >/dev/null; then run "$DEPLOY/setup/02-matrix-setup.sh" --apply --yes --only deps; fi
+    if ! command -v cargo >/dev/null; then run "$DEPLOY/setup/02-matrix-setup.sh" --apply --yes --build --only deps; fi
     if (( REBUILD )); then run cargo clean --manifest-path "$DEPLOY/Cargo.toml" --target-dir "$TARGET_DIR" --profile pi; fi
     run nice -n 10 env CARGO_TARGET_DIR="$TARGET_DIR" cargo build --manifest-path "$DEPLOY/Cargo.toml" \
         --profile pi --features hardware --locked --bins -j1
