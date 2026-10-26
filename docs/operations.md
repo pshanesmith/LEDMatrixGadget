@@ -2,11 +2,11 @@
 
 Everyday commands (the service is `matrix-display`).
 
-**Where things live:** the code runs from `/opt/matrix`, a clone of the GitHub repository (with the build in `target/` and the installed programs in `bin/`); config and the token are in `/etc/matrix`; the weather and Home Assistant cache is in `/var/lib/matrix-display`. Your checkout in your home folder is for development only.
+**Where things live:** the program runs from `/opt/matrix` (unpacked from a GitHub release; a `--from-source` install is a git clone with `target/` and `bin/`); config and the token are in `/etc/matrix`; the weather and Home Assistant cache is in `/var/lib/matrix-display`. Your checkout in your home folder is for development only.
 
 **Inspecting the deployment:** `/opt/matrix` is root-owned, so use `sudo git -C /opt/matrix log --oneline` (without sudo git reports "dubious ownership").
 
-**Update from GitHub:** push your changes, then on the Pi run `sudo /opt/matrix/setup/03-install-service.sh --apply` (pulls the latest `main`, reinstalls, restarts). `--ref v1.0` deploys a tag; `--repo URL` changes the source.
+**Update:** run the installer again (see "Installing and updating the program" below); it takes the newest GitHub release.
 
 | Task | Command |
 |---|---|
@@ -53,7 +53,7 @@ The Pi has about 460 MB of RAM. The display itself needs about 35 MB. Claude Cod
 `sudo apt update && sudo apt full-upgrade`, then reboot. After a kernel update confirm `isolcpus` and the sound blacklist still apply (`./setup/02-matrix-setup.sh --only verify`). No unattended upgrades are installed by design.
 
 ## Automatic updates
-The Pi upgrades itself nightly (`unattended-upgrades`): Debian security and stable updates plus the Raspberry Pi repository, run at about 03:00. If a kernel or firmware update needs a reboot it happens at **04:00 and only when nobody is logged in**, so an open SSH session postpones it a night; the display is dark for about a minute. Application code is not updated this way: use `sudo /opt/matrix/setup/03-install-service.sh --apply`.
+The Pi upgrades itself nightly (`unattended-upgrades`): Debian security and stable updates plus the Raspberry Pi repository, run at about 03:00. If a kernel or firmware update needs a reboot it happens at **04:00 and only when nobody is logged in**, so an open SSH session postpones it a night; the display is dark for about a minute. Application code is not updated this way: run the installer again (`sudo bash install.sh`).
 
 | Task | Command |
 |---|---|
@@ -66,19 +66,22 @@ The Pi upgrades itself nightly (`unattended-upgrades`): Debian security and stab
 
 The health check runs ten minutes after every boot and daily at 08:00; a failure shows in `systemctl --failed` and the journal.
 
-## Building and updating the program
-The display is a Rust program. Building it on the Pi (about 15+ minutes the first time, about 1 GB of RAM including swap) works but is slow; the easier way is to build on another machine and install the result:
+## Installing and updating the program
+The display is a Rust program, installed from a GitHub release (built by GitHub Actions for 64-bit Raspberry Pi OS):
 
 ```bash
-./tools/cross-build.sh                                   # on the Mac; needs zig, cargo-zigbuild and the aarch64-unknown-linux-gnu target
-scp dist/matrix-display dist/matrix-hello pi:/tmp/
-ssh pi 'sudo /opt/matrix/setup/03-install-service.sh --apply --binary /tmp/matrix-display'
+curl -fsSL https://github.com/pshanesmith/LEDMatrixGadget/releases/latest/download/install.sh -o install.sh
+sudo bash install.sh                       # install or UPDATE to the newest release (add --version v0.2.0 to pin one)
 ```
 
-Without `--binary` the installer compiles in `/opt/matrix/target` (`cargo build --profile pi --features hardware`) and installs into `/opt/matrix/bin`. Later updates only rebuild what changed; `--rebuild` starts over. Check the `render avg` and `rss` figures in `journalctl -u matrix-display` after a change. Tools next to the service: `/opt/matrix/bin/matrix-geocode`, `matrix-set-config`, `matrix-ha-discover`, `matrix-hello`.
+It verifies the download's SHA-256, installs into `/opt/matrix` (`bin/`, `setup/`, `systemd/`, `config/`, `tools/`, `VERSION`), keeps any existing `/etc/matrix` files, installs the systemd units and restarts the service. `cat /opt/matrix/VERSION` shows what is installed. Tools next to the service: `/opt/matrix/bin/matrix-geocode`, `matrix-set-config`, `matrix-ha-discover`, `matrix-hello`.
+
+**Compile on the Pi instead:** `sudo bash install.sh --from-source [--ref BRANCH]` clones the repository to `/opt/matrix` and builds there (`cargo build --profile pi --features hardware`; about 1 GB of RAM including swap and a long wait; the installer installs `gcc cargo rustc` if they are missing). Later updates with `sudo /opt/matrix/setup/03-install-service.sh --apply` only rebuild what changed; `--rebuild` starts over. A source install and a release install do not mix: the release installer refuses to overwrite a git checkout.
+
+**Your own build:** `./tools/cross-build.sh` (on a Mac; needs `zig`, `cargo-zigbuild` and the `aarch64-unknown-linux-gnu` target) makes the programs in `dist/`; copy them over and run `sudo setup/03-install-service.sh --apply --binary /tmp/matrix-display`, or pack them with `./tools/package-release.sh`. Check the `render avg` and `rss` figures in `journalctl -u matrix-display` after a change.
 
 ## Backups
 `sudo cp -a /etc/matrix ~/matrix-etc-backup` (contains the token; keep it private). The repository holds everything else; `config/config.toml`, `secrets.env`, `target/`, `bin/` and `dist/` are gitignored, and `.githooks/pre-commit` blocks commits that contain a token (enable with `git config core.hooksPath .githooks`, already set).
 
 ## Rebuilding from scratch
-`setup/01-pi-setup.sh --apply`, reboot, `setup/02-matrix-setup.sh --apply` (edits the boot settings; add `--build` to also install the build tools and compile on the Pi), reboot, `tools/test-matrix.sh`, then `setup/03-install-service.sh --apply` (or `--binary` with a cross-built program).
+`setup/01-pi-setup.sh --apply`, reboot, `setup/02-matrix-setup.sh --apply` (edits the boot settings), reboot, `tools/test-matrix.sh`, then the installer above.

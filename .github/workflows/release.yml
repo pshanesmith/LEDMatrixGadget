@@ -1,0 +1,44 @@
+# Publishes a release when a version tag is pushed:  git tag v0.2.0 && git push origin v0.2.0
+# The Pi program is cross-built here (tools/cross-build.sh) and packed (tools/package-release.sh), so a
+# release does not depend on anyone's laptop. install.sh downloads the result.
+name: release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The tag must match the crate version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME does not match Cargo.toml version $version" >&2; exit 1; }
+
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal && rustup default stable && rustup target add aarch64-unknown-linux-gnu
+
+      - name: Tests
+        run: cargo test --locked
+
+      - name: Zig and cargo-zigbuild
+        run: pip install ziglang && cargo install --locked cargo-zigbuild
+
+      - name: Cross-build for the Pi
+        run: ./tools/cross-build.sh
+
+      - name: Package
+        run: ./tools/package-release.sh
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            dist/matrix-display-aarch64.tar.gz dist/matrix-display-aarch64.tar.gz.sha256 dist/install.sh \
+            --title "$GITHUB_REF_NAME" --generate-notes

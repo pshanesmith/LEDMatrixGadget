@@ -146,9 +146,10 @@ The user enters a ZIP or postal code; `matrix-geocode ZIP [--country US] [--unit
 **Repository layout**
 
 ```
-README.md  DESIGN.md  Cargo.toml  Cargo.lock
+README.md  DESIGN.md  Cargo.toml  Cargo.lock  install.sh
 setup/        01-pi-setup.sh  02-matrix-setup.sh  03-install-service.sh  lib/common.sh
-tools/        test-matrix.sh  cross-build.sh  health-check.sh  soak-report.sh
+tools/        test-matrix.sh  cross-build.sh  package-release.sh  health-check.sh  soak-report.sh
+.github/workflows/  ci.yml  release.yml
 src/
   lib.rs  main.rs (matrix-display)  runner.rs  compositor.rs  config.rs  state.rs  layout.rs
   forecast.rs  samples.rs  gfx.rs  pyrandom.rs  util.rs  setconfig.rs  hadiscover.rs
@@ -159,7 +160,7 @@ src/
 config/       config.example.toml  secrets.env.example
 systemd/      matrix-display.service  matrix-health.service  matrix-health.timer
 docs/         operations.md  hardware.md  previews/
-tests/        scene.rs  ui.rs  cli.rs  setup_scripts.rs  common/  fixtures/  golden/
+tests/        scene.rs  ui.rs  cli.rs  setup_scripts.rs  release.rs  common/  fixtures/  golden/
 .githooks/    pre-commit
 ```
 
@@ -196,14 +197,16 @@ Automates the system side of Adafruit's "Install Manually" guide, adapted to Deb
 
 The panel is refreshed by software timing, so flicker is a trade between colour depth and refresh rate. With `pwm_bits = 11` the measured refresh was about 108 Hz; each bit removed roughly doubles it. Tuning order: lower `pwm_bits`, set `limit_refresh_hz` to hold a steady rate, raise `gpio_slowdown` for shimmering lines.
 
-## 10. Service and deployment (`setup/03-install-service.sh`)
+## 10. Service and deployment (`install.sh`, `setup/03-install-service.sh`)
 
-The service runs a **copy of the repository deployed from GitHub**, not a working checkout.
+The service runs a **release downloaded from GitHub**, or, as an option, a source checkout built on the Pi.
 
-- **Layout:** `/opt/matrix` is a `git clone` (root-owned, world-readable) with `target/` (the cargo build) and `bin/` (the installed `matrix-display` and helper programs the service runs) inside, both gitignored. Config and token are in `/etc/matrix` (`config.toml`, `secrets.env`, and `deploy_key` for a private repository). Caches are in `/var/lib/matrix-display` (owned by `daemon`).
-- **Installer:** dry run by default. It clones or fast-forwards `/opt/matrix` to `--ref` (default `main`) from `--repo` (default: the checkout's `origin`), builds the program (or takes `--binary`), installs it into `bin/`, writes the unit and (re)starts the service. **Re-running it is the update procedure.** It is wrapped in a function so a `git pull` cannot rewrite the script while it runs. It never overwrites an existing `/etc/matrix` file. `--no-drop` keeps the service as root; `--uninstall` removes the unit.
-- **Prebuilt binary:** compiling on the Pi takes 15+ minutes and nearly exhausts RAM, so `--binary PATH` installs a binary made by `tools/cross-build.sh` instead (helper programs next to it are installed too). Later updates reuse `target/`, so only changed crates rebuild; `--rebuild` starts from scratch.
-- **Private repositories:** use an SSH URL; the installer creates a read-only per-repository deploy key and prints the public half to add on GitHub. A public repository needs nothing.
+- **Releases:** pushing a tag `vX.Y.Z` (which must equal the version in `Cargo.toml`) runs `.github/workflows/release.yml`: tests, `tools/cross-build.sh` (zig and `cargo-zigbuild`, glibc 2.36 target so it runs on Debian 12 and 13), `tools/package-release.sh`, then `gh release create` with three assets: `matrix-display-aarch64.tar.gz` (the five programs, setup scripts, systemd units, example config, tools, docs, a `VERSION` file), its `.sha256`, and `install.sh`. The asset names never change, so `releases/latest/download/<name>` always means the newest release and `releases/download/<tag>/<name>` a pinned one. `ci.yml` runs the tests and clippy on every push and pull request. A release can also be made by hand on a Mac (`cross-build.sh`, `package-release.sh`, `gh release create`).
+- **`install.sh`:** the entry point, run as `sudo bash install.sh` after downloading it. It checks it is on a 64-bit Raspberry Pi, downloads the archive and checksum with `curl`, verifies the SHA-256, unpacks to a temporary directory and runs the bundled `setup/03-install-service.sh --release DIR --apply`. Re-running it updates. `--version TAG` pins a release; `--from-source [--ref NAME]` clones the repository and runs its `03-install-service.sh` instead (building on the Pi); `--dry-run` stops after unpacking. No `git`, `cargo` or compiler is needed for a release install. The repository must be public for the plain download; `MATRIX_REPO` and `MATRIX_RELEASE_BASE` (any URL, including `file://`) override the sources and are what the tests use.
+- **Layout:** `/opt/matrix` holds `bin/` (the programs the service runs), `setup/`, `systemd/`, `config/`, `tools/`, `docs/` and `VERSION` from a release, replaced wholesale on each update; a source install is a `git clone` (root-owned, world-readable) with `target/` and `bin/` inside, both gitignored. Config and token are in `/etc/matrix` (`config.toml`, `secrets.env`, and `deploy_key` for a private repository). Caches are in `/var/lib/matrix-display` (owned by `daemon`). The release installer refuses to overwrite a git checkout.
+- **`03-install-service.sh`:** dry run by default. `--release DIR` installs an unpacked release; without it, it clones or fast-forwards `/opt/matrix` to `--ref` (default `main`) from `--repo` (default: the checkout's `origin`), builds the program (or takes `--binary`) and installs it into `bin/`. Either way it then writes the unit and (re)starts the service. It is wrapped in a function so a `git pull` cannot rewrite the script while it runs. It never overwrites an existing `/etc/matrix` file. `--no-drop` keeps the service as root; `--uninstall` removes the unit.
+- **Prebuilt binary:** `--binary PATH` installs a binary from `tools/cross-build.sh` into a source install (helper programs next to it are installed too). Source builds reuse `target/`, so only changed crates rebuild; `--rebuild` starts from scratch. Compiling on the Pi takes 15+ minutes and nearly exhausts RAM.
+- **Private repositories:** the plain download does not work for them; use `--from-source` with an SSH URL (`03-install-service.sh --repo git@github.com:...`), which creates a read-only per-repository deploy key and prints the public half to add on GitHub. A public repository needs nothing.
 - **Unit (`systemd/matrix-display.service`):** `Type=notify` with `WatchdogSec=30`, `Restart=always`, `RestartSec=5`, `OOMScoreAdjust=-500`, `EnvironmentFile=/etc/matrix/secrets.env`, `NoNewPrivileges`, `PrivateTmp`, `ProtectHome=yes`, `ProtectSystem=full`, writable only in the state directory. No `CPUAffinity`.
 - **Privilege drop:** the process starts as root and the panel library drops to `daemon` after GPIO setup, so the network-facing code is unprivileged; the files it still needs (the config for reloads, the cache directory) must stay readable to `daemon` afterwards, which is why the deployment is in `/opt` and not a private home folder; a `secrets.env` it can no longer read is skipped, because systemd already put the token in the environment. The installer checks the path and falls back to root if needed. After the drop the process can no longer read `vcgencmd` (`/dev/vchiq` is group `video`), so throttle flags are read by `tools/soak-report.sh` instead of the service log.
 - **Logs:** journald (persistent, 30 MB cap), INFO. `SIGHUP` reloads configuration. On clean shutdown the panel is blanked.
@@ -215,7 +218,7 @@ The service runs a **copy of the repository deployed from GitHub**, not a workin
 About 175 tests run in a few seconds with `cargo test`, none needing the panel or network:
 - **Units** (in `src/`): the Python-compatible random generator (known sequences from CPython), drawing primitives (Pillow-exact ellipses and mask blending), condition mapping, next-change search, config parsing and validation, URL normalisation, the config setter, the geocoder (recorded Open-Meteo and Nominatim responses, offline failures), the weather parser and fetcher (a recorded forecast), the Home Assistant poller (a fake local HTTP server: locks, gates, 401, refused connection, bad JSON, backoff, token never in logs or `Debug` output), `fnmatch` globs, the runner (pacing, dropped frames, panic resilience, reload, systemd notifications over a real socket) and the hardware test patterns.
 - **Rendering** (`tests/scene.rs`, `tests/ui.rs`): over 50 scene frames (every condition, four seasons, twilight, moon phases, cross-fades) and 16 widget screens are compared pixel for pixel with images produced by the original Python version (`tests/golden/`; `UPDATE_GOLDEN=1` rewrites the widget goldens, and `scene-cases.json` lists the scene cases); plus behaviour tests: text-overflow over value ranges, brightness, the rate bolt, per-frame cost, ambient motion.
-- **Programs and scripts** (`tests/cli.rs`, `tests/setup_scripts.rs`): the binaries run as a user would, and the setup scripts' file-editing helpers and apt/systemd snippets are checked on copies (the shell tests run on Linux only).
+- **Programs and scripts** (`tests/cli.rs`, `tests/setup_scripts.rs`, `tests/release.rs`): the binaries run as a user would; the setup scripts' file-editing helpers and apt/systemd snippets are checked on copies (the shell tests run on Linux only); the release is packed from fake binaries and `install.sh` downloads it over `file://`, checks the checksum (a corrupted archive is refused) and unpacks it. The last step, `03-install-service.sh --release`, needs a Pi and is not tested.
 - **Panel code without a panel:** the `rpi-led-panel` crate is Linux-only, so the hardware backend, its driver-settings tests and `matrix-hello` are compiled (not run) with `cargo zigbuild --lib --tests --features hardware --target aarch64-unknown-linux-musl`; `tools/cross-build.sh` links the programs.
 - **On the device:** `tools/test-matrix.sh`, then a 24-48 hour soak reviewed with `tools/soak-report.sh`.
 

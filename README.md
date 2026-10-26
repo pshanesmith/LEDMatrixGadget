@@ -49,22 +49,36 @@ cargo run --bin matrix-ha-discover -- --all-lights --all-doors
 `samples.rs` (named test states). Programs: `matrix-display` (`src/main.rs`) and the helpers in
 `src/bin/`: `matrix-preview`, `matrix-geocode`, `matrix-ha-discover`, `matrix-set-config`, `matrix-hello`.
 
-## Running as a service
+## Installing on the Pi
 
-The service runs a copy of this repository deployed from GitHub to `/opt/matrix`, not your working checkout.
-Building on the Pi takes a while and a lot of memory, so build on your Mac and install the result:
+Download and run the installer from the latest GitHub release. It needs no git and no compiler on the Pi: the
+program is built for 64-bit Raspberry Pi OS by GitHub Actions and downloaded as one checksummed archive.
 
 ```bash
-./tools/cross-build.sh                         # needs zig, cargo-zigbuild, rustup target aarch64-unknown-linux-gnu
-scp dist/matrix-display dist/matrix-hello pi:/tmp/
-sudo ./setup/03-install-service.sh --apply --binary /tmp/matrix-display   # on the Pi: clone to /opt/matrix, install, enable, start
-journalctl -u matrix-display -f                # live log (a performance line every 60 s)
-sudo /opt/matrix/setup/03-install-service.sh --apply   # UPDATE: pull the latest main, rebuild on the Pi, restart
-sudo systemctl reload matrix-display           # re-read /etc/matrix/config.toml (SIGHUP)
-sudo ./setup/03-install-service.sh --uninstall
+curl -fsSL https://github.com/pshanesmith/LEDMatrixGadget/releases/latest/download/install.sh -o install.sh
+less install.sh                  # it runs as root: read it first
+sudo bash install.sh             # installs into /opt/matrix, creates /etc/matrix, starts the service
 ```
 
-Without `--binary` the installer compiles on the Pi, installing the build tools first if they are missing.
-A private repository needs an SSH URL (`git@github.com:USER/LEDMatrixGadget.git`): the installer creates a read-only deploy key and prints the public half to add under the repository's Settings > Deploy keys. See [docs/operations.md](docs/operations.md).
+Then set your location and the Home Assistant token (see [docs/operations.md](docs/operations.md)).
+Run the same two commands again to update. Options: `--version v0.2.0` pins a release, `--from-source [--ref main]`
+clones the repository and compiles on the Pi instead (slow, needs about 1 GB of RAM with swap), `--no-start`,
+`--no-drop`, `--yes`, `--dry-run`.
+
+Other things you will want:
+
+```bash
+journalctl -u matrix-display -f                # live log (a performance line every 60 s)
+sudo systemctl reload matrix-display           # re-read /etc/matrix/config.toml (SIGHUP)
+sudo /opt/matrix/setup/03-install-service.sh --uninstall
+```
+
+**Making a release** (maintainers): bump `version` in `Cargo.toml`, commit, then `git tag v0.2.0 && git push origin v0.2.0`.
+The release workflow runs the tests, cross-builds, packs and publishes `matrix-display-aarch64.tar.gz`, its checksum and
+`install.sh`. To build one yourself on a Mac: `./tools/cross-build.sh && ./tools/package-release.sh`, then
+`gh release create v0.2.0 dist/matrix-display-aarch64.tar.gz dist/matrix-display-aarch64.tar.gz.sha256 dist/install.sh`.
+
+A private repository cannot use the plain download; use `--from-source` with an SSH URL (the installer creates a read-only
+deploy key). See [docs/operations.md](docs/operations.md).
 
 **Memory:** the Pi has about 460 MB of RAM. Close Claude Code and other large programs before starting the display.

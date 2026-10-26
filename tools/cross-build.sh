@@ -27,7 +27,7 @@ while (( $# )); do
   shift
 done
 
-command -v zig >/dev/null || { echo "zig not found (brew install zig)" >&2; exit 1; }
+command -v zig >/dev/null || python3 -m ziglang version >/dev/null 2>&1 || { echo "zig not found (brew install zig, or pip install ziglang)" >&2; exit 1; }
 command -v cargo-zigbuild >/dev/null || { echo "cargo-zigbuild not found (brew install cargo-zigbuild)" >&2; exit 1; }
 rustup target list --installed | grep -qx "$TARGET" || { echo "missing target: rustup target add $TARGET" >&2; exit 1; }
 
