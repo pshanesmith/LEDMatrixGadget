@@ -112,8 +112,8 @@ fn set_config_tool_edits_a_file() {
 
 #[test]
 fn fixtures_parse() {
-    for name in ["open_meteo_sample.json", "ha_template_response.json", "weather_open_meteo_recorded.json",
-                 "ha_template_mixed.json", "ha_template_quiet.json"] {
+    for name in ["weather_open_meteo_recorded.json", "ha_template_mixed.json", "ha_template_quiet.json",
+                 "geocode_nominatim_10001_us.json", "geocode_openmeteo_10001.json", "geocode_openmeteo_10001_us.json"] {
         let text = std::fs::read_to_string(root().join("tests/fixtures").join(name)).unwrap();
         serde_json::from_str::<serde_json::Value>(&text).unwrap_or_else(|e| panic!("{name}: {e}"));
     }

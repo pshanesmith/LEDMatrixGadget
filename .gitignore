@@ -11,6 +11,9 @@ config.toml
 !config.example.toml
 !config/config.example.toml
 
+# Hardware test log written by tools/test-matrix.sh on the Pi it ran on
+docs/hardware-test-results.txt
+
 # Runtime state and caches
 state-cache.json
 *.log

@@ -3,7 +3,8 @@
 //!   matrix-preview --sample rain_then_snow --out rain.png
 //!   matrix-preview --sample thunder --gif --frames 45 --fps 15 --out storm.gif
 //!
-//! `--all` writes every sample (and extra UI variants) to docs/previews/ui-<name>.png.
+//! `--all` writes every sample (and extra UI variants) to docs/previews/ui-<name>.png;
+//! `--scenes` writes just the weather scene of every sample: scene-<name>.png and a 2 s scene-<name>.gif.
 
 use std::path::PathBuf;
 
@@ -13,7 +14,9 @@ use clap::Parser;
 use matrix_display::compositor::build_default_compositor;
 use matrix_display::display::emulator::{save_gif, EmulatorDisplay};
 use matrix_display::display::Display;
+use matrix_display::gfx::Img;
 use matrix_display::samples::{sample_names, sample_state};
+use matrix_display::scene::render_state;
 use matrix_display::ui::variants::variants;
 
 #[derive(Parser)]
@@ -39,6 +42,9 @@ struct Args {
     /// write every sample and UI variant to <out-dir>/ui-<name>.png
     #[arg(long)]
     all: bool,
+    /// write the weather scene of every sample (PNG and a 2 s GIF) to <out-dir>/scene-<name>.png|gif
+    #[arg(long)]
+    scenes: bool,
     #[arg(long, default_value = "docs/previews")]
     out_dir: PathBuf,
 }
@@ -48,6 +54,29 @@ fn main() -> Result<()> {
     let led_look = a.scale >= 4;
     let mut comp = build_default_compositor(true, a.debug_layout);
     let mut disp = EmulatorDisplay::new(64, 64);
+
+    if a.scenes {
+        std::fs::create_dir_all(&a.out_dir)?;
+        // The scene alone (64x35), every pixel readable: no LED look. Animation starts at t = 3 s.
+        let big = |im: &Img| {
+            let mut out = Img::black(im.w * a.scale, im.h * a.scale);
+            for y in 0..out.h {
+                for x in 0..out.w {
+                    out.data[y * out.w + x] = im.get(x / a.scale, y / a.scale);
+                }
+            }
+            out
+        };
+        for name in sample_names() {
+            let state = sample_state(name);
+            let png = a.out_dir.join(format!("scene-{name}.png"));
+            matrix_display::display::emulator::to_rgb_image(&big(&render_state(&state, 3.0))).save(&png)?;
+            let frames: Vec<Img> = (0..30).map(|i| big(&render_state(&state, 3.0 + i as f64 / 15.0))).collect();
+            save_gif(a.out_dir.join(format!("scene-{name}.gif")), &frames, 1000 / 15)?;
+            println!("wrote {}", png.display());
+        }
+        return Ok(());
+    }
 
     if a.all {
         std::fs::create_dir_all(&a.out_dir)?;

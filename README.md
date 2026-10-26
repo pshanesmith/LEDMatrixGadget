@@ -100,7 +100,7 @@ cargo run -- --emulate --once --out frame.png                                   
 ```
 
 Samples: `clear_day clear_night partly_cloudy overcast fog rain_then_snow snow thunder`.
-`cargo run --bin matrix-preview -- --all` writes every sample and UI variant to `docs/previews/`.
+`cargo run --bin matrix-preview -- --all` writes every sample and UI variant to `docs/previews/`, and `-- --scenes` the weather scene alone (PNG and a 2 s GIF) for each sample.
 Copy `config/config.example.toml` to `config/config.toml` and `config/secrets.env.example` to `secrets.env` (both
 gitignored) to run against live data, and enable the commit guard with `git config core.hooksPath .githooks`.
 

@@ -1,6 +1,0 @@
-2026-10-24 00:07:53  START flags: --led-rows=64 --led-cols=64 --led-gpio-mapping=adafruit-hat-pwm --led-slowdown-gpio=2 
-2026-10-24 00:08:18  demo 0: OK
-2026-10-24 00:08:37  demo 4: OK
-2026-10-24 00:08:57  demo 5: OK
-2026-10-24 00:09:22  python smoke test: OK
-2026-10-24 00:09:22  END
