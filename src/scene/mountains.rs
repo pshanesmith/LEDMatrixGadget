@@ -11,7 +11,7 @@ use std::rc::Rc;
 use super::cache::Memo;
 use super::palette::*;
 use crate::gfx::{line_points, pyround, Img, Mask, Rgb};
-use crate::scene_rng::SceneRng;
+use rand::Rng;
 use crate::state::Condition;
 
 const SEED: u64 = 64281;
@@ -134,7 +134,7 @@ fn foliage(u: f64, weights: &[(Rgb, f64)]) -> Rgb {
     weights[weights.len() - 1].0
 }
 
-fn profile(rng: &mut SceneRng, base: i32, peaks: Peaks) -> Vec<i32> {
+fn profile(rng: &mut impl Rng, base: i32, peaks: Peaks) -> Vec<i32> {
     (0..W as i32)
         .map(|x| {
             let mut h = f64::NEG_INFINITY;
@@ -143,7 +143,7 @@ fn profile(rng: &mut SceneRng, base: i32, peaks: Peaks) -> Vec<i32> {
                 h = h.max(ph as f64 * (-(z * z)).exp());
             }
             h += 0.5 * (x as f64 * 0.4 + base as f64).sin(); // faint knolls on the ridgeline
-            let jitter = if rng.random() < 0.06 { 1 } else { 0 };
+            let jitter = if rng.random::<f64>() < 0.06 { 1 } else { 0 };
             (base + 3).min(pyround(base as f64 - h) as i32 + jitter)
         })
         .collect()
@@ -163,7 +163,7 @@ thread_local! {
 fn shapes() -> Rc<Shapes> {
     SHAPES.with(|m| {
         m.get((), || {
-            let mut rng = SceneRng::new(SEED);
+            let mut rng = crate::scene::rng(SEED);
             let ridges = RIDGES
                 .iter()
                 .map(|&(base, peaks, fol)| (profile(&mut rng, base, peaks), fol))
@@ -171,8 +171,8 @@ fn shapes() -> Rc<Shapes> {
             let all: Vec<(i32, i32, i32)> = PINES_X
                 .iter()
                 .map(|&x| {
-                    let h = rng.randint(9, 12);
-                    let b = PINE_BASE + rng.randint(0, 1);
+                    let h = rng.random_range(9..=12);
+                    let b = PINE_BASE + rng.random_range(0..=1);
                     (x, h, b)
                 })
                 .collect();
@@ -196,24 +196,24 @@ fn big_tree(w: i32, h: i32, seed: u64, v: f64) -> Rc<Tree> {
 }
 
 fn build_tree(w: i32, h: i32, seed: u64, v: f64) -> Tree {
-    let mut rng = SceneRng::new(seed);
+    let mut rng = crate::scene::rng(seed);
     let (wf, hf) = (w as f64, h as f64);
     let mut clusters: Vec<(f64, f64, f64, f64, f64)> = Vec::new();
     for _ in 0..(w * h / 9) {
         // clumps fill an irregular dome
         let (mut cx, mut cy) = (0.0, 0.0);
         for _ in 0..20 {
-            cx = rng.uniform(0.0, wf);
-            cy = rng.uniform(0.0, hf);
+            cx = rng.random_range(0.0..wf);
+            cy = rng.random_range(0.0..hf);
             let (nx, ny) = ((cx - wf / 2.0) / (wf / 2.0), (cy - hf * 0.55) / (hf * 0.55));
-            let limit = 0.7 + rng.uniform(-0.1, 0.2);
+            let limit = 0.7 + rng.random_range(-0.1..0.2);
             if nx * nx + ny * ny <= limit {
                 break;
             }
         }
-        let rx = rng.uniform(2.2, 4.2);
-        let ry = rng.uniform(1.8, 3.2);
-        let pick = clamp(v + rng.uniform(-0.2, 0.2), 0.0, 0.999);
+        let rx = rng.random_range(2.2..4.2);
+        let ry = rng.random_range(1.8..3.2);
+        let pick = clamp(v + rng.random_range(-0.2..0.2), 0.0, 0.999);
         clusters.push((cx, cy, rx, ry, pick));
     }
     clusters.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap()); // lower clumps overlap the ones above (stable)
@@ -227,7 +227,7 @@ fn build_tree(w: i32, h: i32, seed: u64, v: f64) -> Tree {
             for x in ((cx - rx) as i32 - 1)..((cx + rx) as i32 + 2) {
                 let (nx, ny) = ((x as f64 + 0.5 - cx) / rx, (y as f64 + 0.5 - cy) / ry);
                 let d = nx * nx + ny * ny;
-                if d > 1.0 + rng.uniform(-0.25, 0.2) || !(0..w).contains(&x) || !(0..h).contains(&y) {
+                if d > 1.0 + rng.random_range(-0.25..0.2) || !(0..w).contains(&x) || !(0..h).contains(&y) {
                     continue;
                 }
                 let light = nx * 0.45 + ny * 0.85;
@@ -240,7 +240,7 @@ fn build_tree(w: i32, h: i32, seed: u64, v: f64) -> Tree {
                 } else {
                     'd'
                 };
-                if ch == 'm' && rng.random() < 0.1 {
+                if ch == 'm' && rng.random::<f64>() < 0.1 {
                     ch = 's';
                 }
                 if leaves.insert((x, y), (ch, pick)).is_none() {
@@ -254,10 +254,10 @@ fn build_tree(w: i32, h: i32, seed: u64, v: f64) -> Tree {
         let edge = [(1, 0), (-1, 0), (0, 1), (0, -1)]
             .iter()
             .any(|(dx, dy)| !leaves.contains_key(&(x + dx, y + dy)));
-        let mut drop = edge && rng.random() < 0.22;
+        let mut drop = edge && rng.random::<f64>() < 0.22;
         if !drop {
             let shade = leaves[&(x, y)].0;
-            drop = (shade == 'd' || shade == 'x') && rng.random() < 0.1;
+            drop = (shade == 'd' || shade == 'x') && rng.random::<f64>() < 0.1;
         }
         if drop {
             leaves.remove(&(x, y));

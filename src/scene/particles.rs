@@ -6,7 +6,7 @@ use std::rc::Rc;
 use super::cache::Memo;
 use super::palette::*;
 use crate::gfx::{pyround, Img, Mask};
-use crate::scene_rng::SceneRng;
+use rand::Rng;
 
 const N_RAIN: usize = 44;
 const N_SNOW: usize = 44;
@@ -53,13 +53,13 @@ thread_local! {
 fn rain_drops() -> Rc<Vec<Drop>> {
     DROPS.with(|m| {
         m.get((), || {
-            let mut rng = SceneRng::new(902);
+            let mut rng = crate::scene::rng(902);
             (0..N_RAIN)
                 .map(|_| {
-                    let x0 = rng.uniform(0.0, W as f64);
-                    let y0 = rng.uniform(0.0, (H + 4) as f64);
-                    let speed = rng.uniform(34.0, 52.0);
-                    let length = rng.choice(&[2.0, 3.0, 3.0]);
+                    let x0 = rng.random_range(0.0..W as f64);
+                    let y0 = rng.random_range(0.0..(H + 4) as f64);
+                    let speed = rng.random_range(34.0..52.0);
+                    let length = [2.0_f64, 3.0, 3.0][rng.random_range(0..3)];
                     Drop { x0, y0, speed, length }
                 })
                 .collect()
@@ -70,16 +70,16 @@ fn rain_drops() -> Rc<Vec<Drop>> {
 fn flakes() -> Rc<Vec<Flake>> {
     FLAKES.with(|m| {
         m.get((), || {
-            let mut rng = SceneRng::new(311);
+            let mut rng = crate::scene::rng(311);
             (0..N_SNOW)
                 .map(|_| {
-                    let x0 = rng.uniform(0.0, W as f64);
-                    let y0 = rng.uniform(0.0, H as f64);
-                    let vy = rng.uniform(4.0, 9.0);
-                    let amp = rng.uniform(0.5, 2.0);
-                    let freq = rng.uniform(0.6, 1.8);
-                    let phase = rng.uniform(0.0, 6.28);
-                    let bright = rng.random() < 0.55;
+                    let x0 = rng.random_range(0.0..W as f64);
+                    let y0 = rng.random_range(0.0..H as f64);
+                    let vy = rng.random_range(4.0..9.0);
+                    let amp = rng.random_range(0.5..2.0);
+                    let freq = rng.random_range(0.6..1.8);
+                    let phase = rng.random_range(0.0..std::f64::consts::TAU);
+                    let bright = rng.random::<f64>() < 0.55;
                     Flake { x0, y0, vy, amp, freq, phase, bright }
                 })
                 .collect()
@@ -119,10 +119,10 @@ fn fog_masks() -> Rc<(Mask, Mask)> {
             let profile = [50.0, 105.0, 150.0, 105.0, 50.0];
             let mut out = Vec::new();
             for (seed, rows) in [(5u64, [13i32, 21, 29]), (9, [17, 25, 32])] {
-                let mut rng = SceneRng::new(seed);
+                let mut rng = crate::scene::rng(seed);
                 let mut mask = Mask::new(W, H, 0);
                 let waves: Vec<(i32, f64)> =
-                    rows.iter().map(|_| (rng.randint(1, 3), rng.uniform(0.0, 6.28))).collect();
+                    rows.iter().map(|_| (rng.random_range(1..=3), rng.random_range(0.0..std::f64::consts::TAU))).collect();
                 for (&(k, ph), &row) in waves.iter().zip(&rows) {
                     for x in 0..W {
                         let a = 0.65 + 0.35 * (2.0 * PI * k as f64 * x as f64 / W as f64 + ph).sin();
@@ -163,17 +163,17 @@ struct Strike {
 }
 
 fn strike(slot: i64) -> Option<Strike> {
-    let mut rng = SceneRng::new((slot * 7919 + 13) as u64);
-    if rng.random() > 0.8 {
+    let mut rng = crate::scene::rng((slot * 7919 + 13) as u64);
+    if rng.random::<f64>() > 0.8 {
         return None;
     }
-    let start = rng.uniform(0.4, PERIOD - 1.0);
-    let mut x = rng.randint(10, 54);
+    let start = rng.random_range(0.4..PERIOD - 1.0);
+    let mut x = rng.random_range(10..=54);
     let mut pts = vec![(x, 0)];
     let mut y = 0;
     while y < 27 {
-        y += rng.randint(2, 4);
-        x += rng.randint(-3, 3);
+        y += rng.random_range(2..=4);
+        x += rng.random_range(-3..=3);
         pts.push((x, y));
     }
     Some(Strike { start, pts })

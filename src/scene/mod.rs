@@ -1,8 +1,5 @@
 //! Procedural weather scene (DESIGN.md section 4): `SceneRenderer` draws into `layout::SCENE`.
 
-// The seeded shapes use Python's literal 6.28 (not TAU) so they stay identical to the original display.
-#![allow(clippy::approx_constant)]
-
 pub mod cache;
 pub mod clouds;
 pub mod digits;
@@ -10,6 +7,18 @@ pub mod mountains;
 pub mod palette;
 pub mod particles;
 pub mod sky;
+
+use rand::SeedableRng;
+
+/// The generator behind every fixed shape in the scene (stars, ridges, trees, rain, snow). ChaCha8 is portable and
+/// its output for a seed is stable across platforms and `rand` versions (the sampling helpers on top are not
+/// promised stable across `rand` versions, so a `rand` upgrade can change the shapes; `Cargo.lock` pins it and
+/// the golden images in `tests/golden/` notice).
+pub type SceneRng = rand_chacha::ChaCha8Rng;
+
+pub fn rng(seed: u64) -> SceneRng {
+    SceneRng::seed_from_u64(seed)
+}
 
 use chrono::Datelike;
 

@@ -5,7 +5,7 @@ use std::rc::Rc;
 use super::cache::Memo;
 use super::palette::*;
 use crate::gfx::{pyround, Img, Mask, Rgb};
-use crate::scene_rng::SceneRng;
+use rand::Rng;
 use crate::state::Condition;
 
 type Sprite = (Img, Mask);
@@ -127,7 +127,7 @@ fn layers(eq: i32, cond: Condition) -> Rc<Vec<Deck>> {
             let (light, shade) = palette(eq, cond);
             let mut decks = Vec::new();
             for (seed, rows, speed, tint) in [(31u64, 7i32, 1.5, 0.0), (47, 10, 2.8, 0.3)] {
-                let mut rng = SceneRng::new(seed);
+                let mut rng = crate::scene::rng(seed);
                 let (w, h) = (W as i32, rows + 3);
                 let mut mask = Mask::new(w as usize, h as usize, 0);
                 let mut rgb = Img::new(w as usize, h as usize, shade);
@@ -135,9 +135,9 @@ fn layers(eq: i32, cond: Condition) -> Rc<Vec<Deck>> {
                 let top = lerp(light, shade, tint);
                 let n = 11;
                 for k in 0..n {
-                    let cx = k as f64 * W as f64 / n as f64 + rng.uniform(-2.0, 2.0);
-                    let cy = rng.uniform((rows - 7) as f64, (rows - 1) as f64);
-                    let r = rng.uniform(2.5, 5.5);
+                    let cx = k as f64 * W as f64 / n as f64 + rng.random_range(-2.0..2.0);
+                    let cy = rng.random_range((rows - 7) as f64..(rows - 1) as f64);
+                    let r = rng.random_range(2.5..5.5);
                     for off in [-w, 0, w] {
                         let (x0, y0) = (cx + off as f64 - r, cy - r * 0.8);
                         let (x1, y1) = (cx + off as f64 + r, cy + r * 0.8);

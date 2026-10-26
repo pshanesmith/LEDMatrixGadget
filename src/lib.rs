@@ -9,7 +9,6 @@ pub mod forecast;
 pub mod gfx;
 pub mod hadiscover;
 pub mod layout;
-pub mod scene_rng;
 pub mod runner;
 pub mod samples;
 pub mod scene;

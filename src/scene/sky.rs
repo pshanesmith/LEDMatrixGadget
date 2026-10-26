@@ -8,7 +8,7 @@ use chrono::{TimeZone, Utc};
 use super::cache::Memo;
 use super::palette::*;
 use crate::gfx::{pyround, Img, Mask};
-use crate::scene_rng::SceneRng;
+use rand::Rng;
 use crate::state::{Condition, Dt};
 
 /// Sun/moon centre sits here at sunrise/sunset.
@@ -64,13 +64,13 @@ struct Star {
 fn stars() -> Rc<Vec<Star>> {
     STARS.with(|m| {
         m.get((), || {
-            let mut rng = SceneRng::new(1717);
+            let mut rng = crate::scene::rng(1717);
             (0..26)
                 .map(|_| {
-                    let x = rng.randrange(0, W as i32);
-                    let y = rng.randrange(0, 22);
-                    let base = rng.uniform(0.5, 1.0);
-                    let phase = rng.uniform(0.0, 6.28);
+                    let x = rng.random_range(0..W as i32);
+                    let y = rng.random_range(0..22);
+                    let base = rng.random_range(0.5..1.0);
+                    let phase = rng.random_range(0.0..std::f64::consts::TAU);
                     Star { x, y, base, phase }
                 })
                 .collect()
@@ -107,11 +107,11 @@ pub fn draw_shooting_star(img: &mut Img, visibility: f64, t: f64) {
     if local > SHOOTING_LENGTH {
         return;
     }
-    let mut rng = SceneRng::new((cycle as i64 * 7919 + 13) as u64);
-    let mut x0 = rng.uniform(6.0, 40.0);
-    let y0 = rng.uniform(1.0, 12.0);
-    let dx = 30.0 * rng.choice(&[1.0, 1.0, -1.0]);
-    let dy = rng.uniform(7.0, 13.0);
+    let mut rng = crate::scene::rng((cycle as i64 * 7919 + 13) as u64);
+    let mut x0 = rng.random_range(6.0..40.0);
+    let y0 = rng.random_range(1.0..12.0);
+    let dx = 30.0 * [1.0_f64, 1.0, -1.0][rng.random_range(0..3)];
+    let dy = rng.random_range(7.0..13.0);
     if dx < 0.0 {
         x0 += 20.0;
     }

@@ -119,8 +119,8 @@ setup/ tools/   Pi setup scripts, cross-build and release packaging, hardware te
 tests/          scene, widgets, programs, scripts and release tests; golden images in tests/golden/
 ```
 
-The scene and widgets match the original Python version pixel for pixel; `tests/golden/` holds images that version
-made. See [DESIGN.md](DESIGN.md) for the details.
+The widget screens match the original Python version pixel for pixel, and the weather scene is covered by golden images in
+`tests/golden/`. See [DESIGN.md](DESIGN.md) for the details.
 
 ### Make a release
 

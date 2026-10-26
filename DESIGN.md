@@ -81,7 +81,7 @@ Procedural pixel art with no image assets. Layers, back to front:
 - **Cross-fade:** `SceneRenderer` remembers the last drawn state so a condition change blends into the new picture over 2 s; a backwards or over-5-second jump in time resets without fading.
 - **Ambient motion:** a clear sky once looked frozen (0% of scene pixels changed over 10 s), so stars twinkle at individual rates, the sun's eight rays alternate twice a second, and one cloud always drifts.
 - **Cost:** a scene frame renders in well under a millisecond on a laptop (release build; the Python version needed 3-5 ms there); the Pi Zero 2 W has not been measured yet. The budget is 66 ms at 15 fps.
-- **Same picture as the Python original:** the shapes use a Mersenne Twister that reproduces Python's `random.Random` (`scene_rng.rs`), rounding follows Python's round-half-to-even, and the drawing primitives follow Pillow's (ellipse outline tracing, mask blending). The tests compare more than 50 scene frames and the widget screens, made by the Python version, pixel for pixel (`tests/golden/`).
+- **Seeded shapes:** stars, ridges, trees, rain and snow positions come from a seeded `ChaCha8Rng` (`rand_chacha`; `scene::rng(seed)`), so the skyline and trees never change between runs or machines. The Python version used `random.Random`; the Rust one deliberately does not reproduce its numbers, so the trees, clouds and drops are arranged differently from the Python version (same style, same ridges' overall look). The drawing primitives (ellipse outlines, mask blending, rounding) still follow Pillow's, and the widget screens are still pixel-identical to the Python version's images. A `rand` upgrade can change the shapes because its sampling helpers are not value-stable across versions; `Cargo.lock` pins it and the golden images would show it.
 - Wind from the forecast biases rain, snow and cloud drift.
 
 ## 5. Data sources
@@ -135,7 +135,7 @@ The user enters a ZIP or postal code; `matrix-geocode ZIP [--country US] [--unit
 | D5 | One systemd service, `Type=notify`, watchdog, `Restart=always` | Self-healing: a hung loop or crash is restarted. |
 | D6 | Non-secret config in `config.toml`, secrets only in the environment | Keeps the token out of the repository. |
 | D7 | The service starts as root for GPIO timing; the library drops to `daemon` after setup | Least privilege for the network-facing code. Needs code readable by `daemon`, hence `/opt/matrix`. |
-| D8 | Few dependencies: `chrono`, `serde_json`, `toml`, `ureq` (rustls), `clap`, `log`/`env_logger`, `signal-hook`, `anyhow`; `image` (PNG/GIF) is used by the emulator and previews only | Small update surface; everything is pinned by `Cargo.lock`. |
+| D8 | Few dependencies: `chrono`, `serde_json`, `toml`, `ureq` (rustls), `clap`, `log`/`env_logger`, `signal-hook`, `anyhow`, `rand` and `rand_chacha` (the seeded shapes); `image` (PNG/GIF) is used by the emulator and previews only | Small update surface; everything is pinned by `Cargo.lock`. |
 | D9 | Brightness capped and dimmed after sunset | Power budget, heat, night glare. |
 | D10 | App memory budget under about 100 MB | The Python version measured about 35 MB of about 460 MB total; the Rust build is expected to be smaller but has not been measured on the Pi yet. |
 
@@ -152,7 +152,7 @@ tools/        test-matrix.sh  cross-build.sh  package-release.sh  health-check.s
 .github/workflows/  ci.yml  release.yml
 src/
   lib.rs  main.rs (matrix-display)  runner.rs  compositor.rs  config.rs  state.rs  layout.rs
-  forecast.rs  samples.rs  gfx.rs  scene_rng.rs  util.rs  setconfig.rs  hadiscover.rs
+  forecast.rs  samples.rs  gfx.rs  util.rs  setconfig.rs  hadiscover.rs
   display/{mod,emulator,hardware,pattern}.rs   data/{weather,geocode,homeassistant}.rs
   scene/{mod,sky,mountains,clouds,particles,palette,digits,cache}.rs
   ui/{fonts,icons,widgets,variants}.rs
@@ -216,8 +216,8 @@ The service runs a **release downloaded from GitHub**, or, as an option, a sourc
 ## 11. Testing
 
 About 175 tests run in a few seconds with `cargo test`, none needing the panel or network:
-- **Units** (in `src/`): the Python-compatible random generator (known sequences from CPython), drawing primitives (Pillow-exact ellipses and mask blending), condition mapping, next-change search, config parsing and validation, URL normalisation, the config setter, the geocoder (recorded Open-Meteo and Nominatim responses, offline failures), the weather parser and fetcher (a recorded forecast), the Home Assistant poller (a fake local HTTP server: locks, gates, 401, refused connection, bad JSON, backoff, token never in logs or `Debug` output), `fnmatch` globs, the runner (pacing, dropped frames, panic resilience, reload, systemd notifications over a real socket) and the hardware test patterns.
-- **Rendering** (`tests/scene.rs`, `tests/ui.rs`): over 50 scene frames (every condition, four seasons, twilight, moon phases, cross-fades) and 16 widget screens are compared pixel for pixel with images produced by the original Python version (`tests/golden/`; `UPDATE_GOLDEN=1` rewrites the widget goldens, and `scene-cases.json` lists the scene cases); plus behaviour tests: text-overflow over value ranges, brightness, the rate bolt, per-frame cost, ambient motion.
+- **Units** (in `src/`): drawing primitives (Pillow-exact ellipses and mask blending), condition mapping, next-change search, config parsing and validation, URL normalisation, the config setter, the geocoder (recorded Open-Meteo and Nominatim responses, offline failures), the weather parser and fetcher (a recorded forecast), the Home Assistant poller (a fake local HTTP server: locks, gates, 401, refused connection, bad JSON, backoff, token never in logs or `Debug` output), `fnmatch` globs, the runner (pacing, dropped frames, panic resilience, reload, systemd notifications over a real socket) and the hardware test patterns.
+- **Rendering** (`tests/scene.rs`, `tests/ui.rs`): over 50 scene frames (every condition, four seasons, twilight, moon phases, cross-fades) are compared pixel for pixel with golden images (`tests/golden/scene-*`, listed in `scene-cases.json`; `UPDATE_GOLDEN=1 cargo test --test scene` rewrites them after a deliberate change, then review the PNGs); the 16 widget screens (`tests/golden/ui-*`) are compared with images made by the original Python version, since the widgets use no randomness; plus behaviour tests: text-overflow over value ranges, brightness, the rate bolt, per-frame cost, ambient motion.
 - **Programs and scripts** (`tests/cli.rs`, `tests/setup_scripts.rs`, `tests/release.rs`): the binaries run as a user would; the setup scripts' file-editing helpers and apt/systemd snippets are checked on copies (the shell tests run on Linux only); the release is packed from fake binaries and `install.sh` downloads it over `file://`, checks the checksum (a corrupted archive is refused) and unpacks it. The last step, `03-install-service.sh --release`, needs a Pi and is not tested.
 - **Panel code without a panel:** the `rpi-led-panel` crate is Linux-only, so the hardware backend, its driver-settings tests and `matrix-hello` are compiled (not run) with `cargo zigbuild --lib --tests --features hardware --target aarch64-unknown-linux-musl`; `tools/cross-build.sh` links the programs.
 - **On the device:** `tools/test-matrix.sh`, then a 24-48 hour soak reviewed with `tools/soak-report.sh`.

@@ -1,4 +1,4 @@
-//! The weather scene: regression images made by the original Python version, plus behaviour.
+//! The weather scene: regression images (`UPDATE_GOLDEN=1 cargo test --test scene` rewrites them), plus behaviour.
 
 mod common;
 
@@ -19,7 +19,7 @@ fn state_for(case: &Value) -> AppState {
 }
 
 #[test]
-fn matches_the_python_renders() {
+fn matches_the_golden_renders() {
     let cases: Vec<Value> =
         serde_json::from_str(&std::fs::read_to_string(golden_dir().join("scene-cases.json")).unwrap()).unwrap();
     assert!(cases.len() > 40);
@@ -36,6 +36,10 @@ fn matches_the_python_renders() {
         } else {
             render_state(&state_for(case), case["t"].as_f64().unwrap())
         };
+        if std::env::var_os("UPDATE_GOLDEN").is_some() {
+            save_png(&img, &golden_dir().join(file));
+            continue;
+        }
         let want = load_png(&golden_dir().join(file));
         if let Some(bbox) = diff_bbox(&img, &want) {
             let n = img.data.iter().zip(&want.data).filter(|(a, b)| a != b).count();
@@ -146,7 +150,8 @@ fn sunrise_and_sunset_follow_the_clock() {
 
 #[test]
 fn lightning_is_deterministic_and_occasional() {
-    let levels: Vec<f64> = (0..20 * 60).map(|i| particles::flash_level(i as f64 / 20.0)).collect();
+    // A flash peaks for well under 10 ms, so sample finely (200 Hz) over two minutes rather than hope to land on one.
+    let levels: Vec<f64> = (0..200 * 120).map(|i| particles::flash_level(i as f64 / 200.0)).collect();
     assert!(levels.iter().cloned().fold(0.0, f64::max) > 0.9);
     assert!((levels.iter().filter(|v| **v > 0.3).count() as f64) < levels.len() as f64 * 0.15);
     assert_eq!(particles::flash_level(12.34), particles::flash_level(12.34));
