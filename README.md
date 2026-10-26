@@ -35,6 +35,7 @@ cargo run -- --emulate --offline --sample rain_then_snow --seconds 4 --out demo.
 
 The default build has no panel driver, so it builds and runs anywhere. `--features hardware` adds the
 panel backend, which is Linux-only (it builds for the Pi, not on a Mac; `tools/cross-build.sh` does that).
+The panel driver is a patched copy of `rpi-led-panel` in `vendor/rpi-led-panel` (a 64-bit alignment fix; see `PATCHES.md` there).
 Samples: `clear_day clear_night partly_cloudy overcast fog rain_then_snow snow thunder`.
 
 ## Configuration and secrets

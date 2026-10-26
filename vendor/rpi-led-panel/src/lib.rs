@@ -1,0 +1,29 @@
+mod canvas;
+mod chip;
+mod color;
+mod config;
+mod error;
+mod gpio;
+mod hardware_mapping;
+mod init_sequence;
+mod multiplex_mapper;
+mod named_pixel_mapper;
+mod pin_pulser;
+mod pixel_mapper;
+mod registers;
+mod rgb_matrix;
+mod row_address_setter;
+mod utils;
+
+pub use canvas::{Canvas, LedSequence};
+pub use chip::PiChip;
+pub use config::RGBMatrixConfig;
+pub use hardware_mapping::HardwareMapping;
+pub use init_sequence::PanelType;
+pub use multiplex_mapper::MultiplexMapperType;
+pub use named_pixel_mapper::NamedPixelMapperType;
+pub use rgb_matrix::RGBMatrix;
+pub use row_address_setter::RowAddressSetterType;
+
+#[cfg(feature = "drawing")]
+pub use embedded_graphics;

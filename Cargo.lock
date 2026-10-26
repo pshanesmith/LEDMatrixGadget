@@ -676,7 +676,7 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "matrix-display"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "chrono",
@@ -895,8 +895,6 @@ dependencies = [
 [[package]]
 name = "rpi-led-panel"
 version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44fad87434f26a0ec48d755feb6d184a2eefae359da89cdea7bacfd8e4e78758"
 dependencies = [
  "argh",
  "libc",

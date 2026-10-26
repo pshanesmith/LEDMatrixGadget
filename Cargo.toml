@@ -1,6 +1,6 @@
 [package]
 name = "matrix-display"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 rust-version = "1.85"
 description = "Home status display for a 64x64 RGB LED matrix (date, weather scene, Home Assistant)"
@@ -55,6 +55,10 @@ signal-hook = "0.3"
 toml = "0.8"
 ureq = { version = "2", features = ["json"] }
 rpi-led-panel = { version = "0.9", default-features = false, optional = true }
+
+# A patched copy of the panel driver: see vendor/rpi-led-panel/PATCHES.md.
+[patch.crates-io]
+rpi-led-panel = { path = "vendor/rpi-led-panel" }
 
 [dev-dependencies]
 tempfile = "3"
