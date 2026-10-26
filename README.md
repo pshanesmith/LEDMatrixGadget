@@ -129,3 +129,7 @@ Bump `version` in `Cargo.toml`, commit, then `git tag vX.Y.Z && git push origin 
 `matrix-display-aarch64.tar.gz`, its checksum and `install.sh`; the tag must equal the Cargo version. To do it by hand:
 `./tools/cross-build.sh && ./tools/package-release.sh`, then
 `gh release create vX.Y.Z dist/matrix-display-aarch64.tar.gz dist/matrix-display-aarch64.tar.gz.sha256 dist/install.sh`.
+
+## Licence
+
+GPL-3.0-only: see [LICENSE](LICENSE). It also matches the panel driver this links, which is GPL-3.0.

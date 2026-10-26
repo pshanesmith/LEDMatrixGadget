@@ -45,7 +45,7 @@ install -m 644 "$ROOT"/systemd/* "$PKG/systemd/"
 install -m 644 "$ROOT/config/config.example.toml" "$ROOT/config/secrets.env.example" "$PKG/config/"
 install -m 755 "$ROOT/tools/health-check.sh" "$ROOT/tools/soak-report.sh" "$ROOT/tools/test-matrix.sh" "$PKG/tools/"
 install -m 644 "$ROOT/docs/operations.md" "$ROOT/docs/hardware.md" "$PKG/docs/"
-install -m 644 "$ROOT/README.md" "$ROOT/DESIGN.md" "$PKG/"
+install -m 644 "$ROOT/README.md" "$ROOT/DESIGN.md" "$ROOT/LICENSE" "$PKG/"
 printf '%s\n' "$VERSION" > "$PKG/VERSION"
 
 mkdir -p "$OUT"
