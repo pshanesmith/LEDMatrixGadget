@@ -185,6 +185,47 @@ fn nothing_is_held_back_from_upgrades() {
     assert!(!script.contains("apt-mark hold"));
 }
 
+// --- installing the service -------------------------------------------------------------------
+
+#[test]
+fn install_asks_before_it_changes_anything() {
+    let s = script("03-install-service.sh");
+    let first_confirm = s.find("confirm \"").expect("a confirmation");
+    let steps = [
+        "run install -d -m 755 \"$DEPLOY\"",       // release: create the target
+        "run rm -rf \"${DEPLOY:?}/$part\"",        // release: replace the code
+        "apt-get -y install git",                   // source: install git
+        "run ssh-keygen",                           // source: deploy key
+        "run git clone",                            // source: deploy
+        "run git -C \"$DEPLOY\" fetch",
+        "cargo build",
+        "write_file \"$UNIT\"",
+    ];
+    for step in steps {
+        let at = s.find(step).unwrap_or_else(|| panic!("{step} not found"));
+        assert!(first_confirm < at, "{step} runs before the confirmation");
+    }
+    // ...but not before the uninstall branch, which has its own (dry-run by default) flow
+    assert!(s.find("--uninstall) UNINSTALL=1").unwrap() < first_confirm);
+}
+
+#[test]
+fn a_release_install_keeps_the_docs_and_points_updates_at_install_sh() {
+    let s = script("03-install-service.sh");
+    assert!(s.contains("for part in bin setup systemd config tools docs; do"));
+    assert!(s.contains("for part in VERSION README.md DESIGN.md LICENSE; do"));
+    assert!(s.contains("Update: curl -fsSL https://github.com/pshanesmith/LEDMatrixGadget/releases/latest/download/install.sh | sudo bash"));
+    // everything the installer copies is in the release package
+    let pkg = std::fs::read_to_string(root().join("tools/package-release.sh")).unwrap();
+    assert!(pkg.contains("\"$PKG/docs/\"") && pkg.contains("\"$ROOT/README.md\" \"$ROOT/DESIGN.md\" \"$ROOT/LICENSE\""));
+}
+
+#[test]
+fn package_purge_is_limited_to_what_this_run_removed() {
+    let s = script("01-pi-setup.sh");
+    assert!(!s.contains("dpkg -l | awk '/^rc/{print $2}' | tr"), "every leftover config would be purged");
+}
+
 #[test]
 fn scripts_have_valid_bash_syntax() {
     for name in ["01-pi-setup.sh", "02-matrix-setup.sh", "03-install-service.sh", "lib/common.sh"] {

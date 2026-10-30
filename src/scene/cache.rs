@@ -8,6 +8,34 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::rc::Rc;
 
+/// The last few results of something that rarely changes from one frame to the next (the date and
+/// temperature text). Lookups compare keys in place, so a hit allocates nothing.
+pub struct Recent<K, V> {
+    items: RefCell<Vec<(K, Rc<V>)>>,
+    cap: usize,
+}
+
+impl<K, V> Recent<K, V> {
+    pub const fn new(cap: usize) -> Self {
+        Recent { items: RefCell::new(Vec::new()), cap }
+    }
+
+    /// The value whose key satisfies `matches`, else `make()`'s (key, value), remembered.
+    pub fn get_by(&self, matches: impl Fn(&K) -> bool, make: impl FnOnce() -> (K, V)) -> Rc<V> {
+        if let Some((_, v)) = self.items.borrow().iter().find(|(k, _)| matches(k)) {
+            return Rc::clone(v);
+        }
+        let (k, v) = make();
+        let v = Rc::new(v);
+        let mut items = self.items.borrow_mut();
+        if items.len() >= self.cap {
+            items.remove(0);
+        }
+        items.push((k, Rc::clone(&v)));
+        v
+    }
+}
+
 pub struct Memo<K, V> {
     map: RefCell<HashMap<K, Rc<V>>>,
     cap: usize,

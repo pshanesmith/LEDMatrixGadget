@@ -1,17 +1,19 @@
 //! Extra `AppState`s (beyond samples.rs) that exercise the widgets' edge cases.
 
+use std::sync::Arc;
+
 use chrono::Duration;
 
 use crate::samples::{sample_state, NOON};
 use crate::state::{AppState, HomeSnapshot};
 
-fn home(edit: impl FnOnce(&mut HomeSnapshot)) -> Option<HomeSnapshot> {
+fn home(edit: impl FnOnce(&mut HomeSnapshot)) -> Option<Arc<HomeSnapshot>> {
     let mut h = HomeSnapshot::new(*NOON);
     edit(&mut h);
-    Some(h)
+    Some(Arc::new(h))
 }
 
-fn with_home(mut state: AppState, h: Option<HomeSnapshot>) -> AppState {
+fn with_home(mut state: AppState, h: Option<Arc<HomeSnapshot>>) -> AppState {
     state.home = h;
     state
 }
@@ -21,7 +23,7 @@ pub fn variants() -> Vec<(&'static str, AppState)> {
     let rain = sample_state("rain_then_snow");
     let mut cold = clear.clone();
     {
-        let daily = &mut cold.weather.as_mut().unwrap().daily;
+        let daily = &mut Arc::make_mut(cold.weather.as_mut().unwrap()).daily;
         daily.low = -12.4;
         daily.high = 104.6;
     }
@@ -29,10 +31,10 @@ pub fn variants() -> Vec<(&'static str, AppState)> {
     let r = |edit: &dyn Fn(&mut HomeSnapshot)| {
         let mut h = HomeSnapshot::new(*NOON);
         edit(&mut h);
-        with_home(rain.clone(), Some(h))
+        with_home(rain.clone(), Some(Arc::new(h)))
     };
     let mut stale_weather = rain.clone();
-    stale_weather.weather.as_mut().unwrap().fetched_at = *NOON - Duration::hours(4);
+    Arc::make_mut(stale_weather.weather.as_mut().unwrap()).fetched_at = *NOON - Duration::hours(4);
     let mut cold_state = cold;
     cold_state.home = home(|h| h.lights_on = 1);
     vec![

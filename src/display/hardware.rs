@@ -17,7 +17,9 @@ pub struct HardwareDisplay {
     width: usize,
     height: usize,
     brightness: u8,
-    shown: Option<Vec<Rgb>>, // pixels of the frame on the panel
+    /// Pixels of the frame on the panel, when `shown_valid` (the buffer is kept to be reused).
+    shown: Vec<Rgb>,
+    shown_valid: bool,
 }
 
 /// `adafruit-hat-pwm` -> `AdafruitHatPwm`: the crate parses CamelCase names.
@@ -94,7 +96,8 @@ impl HardwareDisplay {
             height: canvas.height(),
             canvas: Some(canvas),
             brightness: cfg.brightness.min(cfg.max_brightness),
-            shown: None,
+            shown: Vec::new(),
+            shown_valid: false,
         })
     }
 
@@ -117,7 +120,7 @@ impl Display for HardwareDisplay {
         self.check(image)?;
         // Most frames of a calm scene are identical to the last one; skipping them saves the copy,
         // and the panel keeps showing the previous frame.
-        if self.shown.as_deref() == Some(&image.data[..]) {
+        if self.shown_valid && self.shown == image.data {
             return Ok(());
         }
         let mut canvas = self.canvas.take().expect("canvas is always put back");
@@ -129,7 +132,8 @@ impl Display for HardwareDisplay {
             }
         }
         self.canvas = Some(self.matrix.update_on_vsync(canvas));
-        self.shown = Some(image.data.clone());
+        self.shown.clone_from(&image.data);
+        self.shown_valid = true;
         Ok(())
     }
 
@@ -137,7 +141,7 @@ impl Display for HardwareDisplay {
         let percent = percent.clamp(1, 100);
         if percent != self.brightness {
             self.brightness = percent;
-            self.shown = None; // brightness is applied as pixels are set: redraw
+            self.shown_valid = false; // brightness is applied as pixels are set: redraw
         }
     }
 
@@ -146,7 +150,7 @@ impl Display for HardwareDisplay {
             canvas.fill(0, 0, 0);
             self.canvas = Some(self.matrix.update_on_vsync(canvas));
         }
-        self.shown = None;
+        self.shown_valid = false;
     }
 }
 
@@ -163,8 +167,7 @@ mod tests {
 
     #[test]
     fn display_settings_become_driver_settings() {
-        let mut cfg = DisplayConfig::default();
-        cfg.brightness = 90; // above max_brightness (70)
+        let mut cfg = DisplayConfig { brightness: 90, ..DisplayConfig::default() }; // above max_brightness (70)
         let m = matrix_config(&cfg).unwrap();
         assert_eq!((m.rows, m.cols, m.pwm_bits, m.pwm_lsb_nanoseconds), (64, 64, 11, 130));
         assert_eq!((m.slowdown, m.led_brightness, m.refresh_rate, m.drop_privs), (Some(2), 70, 120, true));
@@ -178,8 +181,7 @@ mod tests {
 
     #[test]
     fn bad_settings_are_reported() {
-        let mut cfg = DisplayConfig::default();
-        cfg.hardware_mapping = "nonsense".into();
+        let mut cfg = DisplayConfig { hardware_mapping: "nonsense".into(), ..DisplayConfig::default() };
         assert!(matrix_config(&cfg).is_err());
         cfg = DisplayConfig::default();
         cfg.row_address_type = 9;

@@ -63,10 +63,14 @@ rpi-led-panel = { git = "https://github.com/pshanesmith/rpi_led_panel", rev = "c
 [dev-dependencies]
 tempfile = "3"
 
+# Built on a fast machine (tools/cross-build.sh, the release workflow): full LTO and one codegen unit
+# for the smallest, fastest binary, and no symbol tables. Panics still unwind (no panic = "abort"):
+# the render loop and the data threads recover from a panic.
 [profile.release]
 opt-level = 3
-lto = "thin"
-codegen-units = 4
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
 
 # For building on the Pi itself (about 460 MB of RAM): no LTO and more, smaller codegen units use
 # far less memory at the cost of a slightly slower binary.

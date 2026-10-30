@@ -7,10 +7,11 @@ use std::fmt::Write as _;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Result};
-use chrono::Local;
+use chrono::{Local, Utc};
 
 use crate::compositor::{brightness_for, Compositor};
 use crate::config::Config;
@@ -85,11 +86,17 @@ pub fn sd_notify_to(address: &str, message: &str) {
 #[cfg(not(unix))]
 pub fn sd_notify_to(_address: &str, _message: &str) {}
 
-/// The background data feeds, however they are provided.
-pub trait DataSources {
+pub type Latest = (Option<Arc<WeatherSnapshot>>, Option<Arc<HomeSnapshot>>);
+
+/// The background data feeds, however they are provided. `Send` so a reload can hand the old
+/// feeds to a helper thread to wind down.
+pub trait DataSources: Send {
     fn start(&mut self);
+    /// Stop and wait (a bounded time) for the feeds' threads.
     fn stop(&mut self);
-    fn latest(&self) -> (Option<WeatherSnapshot>, Option<HomeSnapshot>);
+    /// Tell the feeds' threads to end, without waiting.
+    fn request_stop(&mut self) {}
+    fn latest(&self) -> Latest;
 }
 
 /// The two live feeds. Either may be absent (no location / no HA token).
@@ -132,6 +139,8 @@ impl DataSources for Sources {
     }
 
     fn stop(&mut self) {
+        // Signal both first, so they wind down together.
+        self.request_stop();
         if let Some(w) = &self.weather {
             w.stop();
         }
@@ -140,19 +149,28 @@ impl DataSources for Sources {
         }
     }
 
-    fn latest(&self) -> (Option<WeatherSnapshot>, Option<HomeSnapshot>) {
+    fn request_stop(&mut self) {
+        if let Some(w) = &self.weather {
+            w.request_stop();
+        }
+        if let Some(h) = &self.home {
+            h.request_stop();
+        }
+    }
+
+    fn latest(&self) -> Latest {
         (self.weather.as_ref().and_then(|w| w.latest()), self.home.as_ref().and_then(|h| h.latest()))
     }
 }
 
 /// Fixed data for demos and tests (`--sample`, `--offline`).
 pub struct StaticSources {
-    weather: Option<WeatherSnapshot>,
-    home: Option<HomeSnapshot>,
+    weather: Option<Arc<WeatherSnapshot>>,
+    home: Option<Arc<HomeSnapshot>>,
 }
 
 impl StaticSources {
-    pub fn new(weather: Option<WeatherSnapshot>, home: Option<HomeSnapshot>) -> Self {
+    pub fn new(weather: Option<Arc<WeatherSnapshot>>, home: Option<Arc<HomeSnapshot>>) -> Self {
         StaticSources { weather, home }
     }
 }
@@ -162,7 +180,7 @@ impl DataSources for StaticSources {
 
     fn stop(&mut self) {}
 
-    fn latest(&self) -> (Option<WeatherSnapshot>, Option<HomeSnapshot>) {
+    fn latest(&self) -> Latest {
         (self.weather.clone(), self.home.clone())
     }
 }
@@ -237,6 +255,27 @@ fn kb_field(text: &str, name: &str) -> Option<u64> {
     text.lines().find_map(|l| l.strip_prefix(name)?.split_whitespace().next()?.parse().ok())
 }
 
+/// Set while a stats line is being completed on its helper thread.
+static HEALTH_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+
+/// Log the minute's frame statistics with `system_health()` appended. vcgencmd can take up to 2 s, so
+/// the health part is gathered on a short-lived thread and the render loop never waits for it.
+fn log_stats_with_health(summary: String) {
+    if HEALTH_IN_FLIGHT.swap(true, Ordering::AcqRel) {
+        log::info!("{summary}"); // the previous one is still running: skip the health part
+        return;
+    }
+    let spawned = std::thread::Builder::new().name("health".into()).spawn(move || {
+        let mut line = summary;
+        let _ = write!(line, " {}", system_health());
+        log::info!("{line}");
+        HEALTH_IN_FLIGHT.store(false, Ordering::Release);
+    });
+    if spawned.is_err() {
+        HEALTH_IN_FLIGHT.store(false, Ordering::Release);
+    }
+}
+
 /// RSS, CPU temperature and throttle flags for the log (all best-effort).
 pub fn system_health() -> String {
     system_health_with(&THROTTLE_READABLE, &run_vcgencmd)
@@ -277,7 +316,8 @@ pub struct Runner<D: Display> {
     pub display: D,
     pub sources: Box<dyn DataSources>,
     pub compositor: Compositor,
-    clock: Box<dyn Fn() -> Dt>,
+    /// `None`: the system clock.
+    clock: Option<Box<dyn Fn() -> Dt>>,
     monotonic: Box<dyn FnMut() -> f64>,
     sleep: Box<dyn FnMut(f64)>,
     notify: Box<dyn FnMut(&str)>,
@@ -296,7 +336,7 @@ impl<D: Display> Runner<D> {
             display,
             sources,
             compositor,
-            clock: Box::new(|| Local::now().fixed_offset()),
+            clock: None,
             monotonic: Box::new(move || start.elapsed().as_secs_f64()),
             sleep: Box::new(|s| std::thread::sleep(Duration::from_secs_f64(s))),
             notify: Box::new(sd_notify),
@@ -309,7 +349,7 @@ impl<D: Display> Runner<D> {
     }
 
     pub fn with_clock(mut self, clock: Box<dyn Fn() -> Dt>) -> Self {
-        self.clock = clock;
+        self.clock = Some(clock);
         self
     }
 
@@ -332,18 +372,22 @@ impl<D: Display> Runner<D> {
     // -- state ------------------------------------------------------------------------
     pub fn build_state(&self) -> AppState {
         let (weather, home) = self.sources.latest();
-        let mut now = (self.clock)();
-        if let Some(w) = &weather {
-            // show the date/time of the forecast location
-            now = now.with_timezone(&w.daily.sunrise.timezone());
-        }
+        // Show the date/time of the forecast location; the system time zone only without a forecast
+        // (so the common case does not consult the local zone every frame).
+        let zone = weather.as_ref().map(|w| w.daily.sunrise.timezone());
+        let now = match (&self.clock, zone) {
+            (Some(clock), Some(tz)) => clock().with_timezone(&tz),
+            (Some(clock), None) => clock(),
+            (None, Some(tz)) => Utc::now().with_timezone(&tz),
+            (None, None) => Local::now().fixed_offset(),
+        };
         AppState { now, weather, home }
     }
 
     // -- loop -------------------------------------------------------------------------
     pub fn run(&mut self, max_frames: Option<u64>) -> Result<()> {
-        let fps = self.cfg.display.scene_fps.max(1) as f64;
-        let period = 1.0 / fps;
+        let mut fps = self.cfg.display.scene_fps.max(1) as f64;
+        let mut period = 1.0 / fps;
         let start = (self.monotonic)();
         let (mut next_frame, mut last_stats, mut last_ping) = (start, start, start);
         let mut last_brightness = start - BRIGHTNESS_EVERY; // force an update on the first frame
@@ -353,8 +397,12 @@ impl<D: Display> Runner<D> {
         log::info!("running at {fps} fps, brightness cap {}%", self.cfg.display.max_brightness);
         while !flag_is_set(&self.stop) && max_frames.is_none_or(|m| frames < m) {
             let now_m = (self.monotonic)();
-            if flag_is_set(&self.reload_requested) {
-                self.do_reload();
+            if flag_is_set(&self.reload_requested) && self.do_reload() {
+                let new_fps = self.cfg.display.scene_fps.max(1) as f64;
+                if new_fps != fps {
+                    log::info!("frame rate {fps} -> {new_fps} fps");
+                    (fps, period) = (new_fps, 1.0 / new_fps);
+                }
             }
             let state = self.build_state();
             if now_m - last_brightness >= BRIGHTNESS_EVERY {
@@ -367,9 +415,9 @@ impl<D: Display> Runner<D> {
             let rendered = catch_unwind(AssertUnwindSafe(|| compositor.render(&state, now_m - start)));
             let frame = match rendered {
                 Ok(frame) => {
-                    last_good = Some(frame.clone());
+                    last_good = Some(frame);
                     self.failures = 0;
-                    Some(frame)
+                    last_good.as_ref()
                 }
                 Err(_) => {
                     self.failures += 1;
@@ -379,11 +427,11 @@ impl<D: Display> Runner<D> {
                     if self.failures >= MAX_CONSECUTIVE_RENDER_FAILURES {
                         bail!("render failed {} times in a row", self.failures);
                     }
-                    last_good.clone()
+                    last_good.as_ref()
                 }
             };
             if let Some(frame) = frame {
-                self.display.show(&frame)?;
+                self.display.show(frame)?;
             }
             let ms = ((self.monotonic)() - began) * 1000.0;
             next_frame += period;
@@ -395,9 +443,7 @@ impl<D: Display> Runner<D> {
                 last_ping = now_m;
             }
             if now_m - last_stats >= STATS_EVERY {
-                let mut line = self.stats.summary();
-                let _ = write!(line, " {}", system_health());
-                log::info!("{line}");
+                log_stats_with_health(self.stats.summary());
                 self.stats.reset();
                 last_stats = now_m;
             }
@@ -411,21 +457,32 @@ impl<D: Display> Runner<D> {
         Ok(())
     }
 
-    fn do_reload(&mut self) {
+    /// Swap in a new configuration and feeds. True when it was applied.
+    ///
+    /// The old feeds are told to stop and then joined on a helper thread: a request in flight can
+    /// take its full timeout (up to 20 s for the weather), and the render loop must not wait for it.
+    /// A finishing old thread may still write its cache once; the writes are atomic with unique temp
+    /// files, and the new feed's next write supersedes it.
+    fn do_reload(&mut self) -> bool {
         self.reload_requested.store(false, Ordering::Relaxed);
-        let Some(reload) = self.reload.as_mut() else { return };
-        let (cfg, mut sources) = match reload() {
+        let Some(reload) = self.reload.as_mut() else { return false };
+        let (cfg, sources) = match reload() {
             Ok(v) => v,
             Err(e) => {
                 log::error!("reload failed, keeping the current configuration: {e}");
-                return;
+                return false;
             }
         };
-        self.sources.stop();
-        sources.start();
+        let mut old = std::mem::replace(&mut self.sources, sources);
+        old.request_stop();
+        if let Err(e) = std::thread::Builder::new().name("stop-old-feeds".into()).spawn(move || old.stop()) {
+            // They were told to stop and end by themselves after their current request.
+            log::warn!("could not start a thread to wait for the old data feeds: {e}");
+        }
+        self.sources.start();
         self.cfg = cfg;
-        self.sources = sources;
         log::info!("configuration reloaded");
+        true
     }
 }
 
@@ -595,6 +652,60 @@ mod tests {
         h.runner.reload_requested.store(true, Ordering::Relaxed);
         h.runner.run(Some(2)).unwrap();
         assert_eq!(h.runner.cfg.display.scene_fps, 10);
+    }
+
+    #[test]
+    fn reload_applies_a_new_frame_rate() {
+        let mut h = harness(None, 15);
+        let s = sample_state("clear_day");
+        let new_cfg = cfg("[display]\nscene_fps = 5");
+        h.runner = h.runner.with_reload(Box::new(move || {
+            Ok((new_cfg.clone(), Box::new(StaticSources::new(s.weather.clone(), s.home.clone())) as Box<dyn DataSources>))
+        }));
+        h.runner.reload_requested.store(true, Ordering::Relaxed);
+        let start = h.clock.get();
+        h.runner.run(Some(10)).unwrap();
+        assert!((h.clock.get() - start - 2.0).abs() < 0.01, "10 frames at 5 fps take 2 s"); // not 0.67 s at 15 fps
+    }
+
+    /// Feeds whose threads take a long time to stop.
+    struct SlowToStop(Arc<AtomicBool>);
+
+    impl DataSources for SlowToStop {
+        fn start(&mut self) {}
+
+        fn stop(&mut self) {
+            std::thread::sleep(Duration::from_millis(1500));
+            self.0.store(true, Ordering::Relaxed);
+        }
+
+        fn request_stop(&mut self) {}
+
+        fn latest(&self) -> Latest {
+            (None, None)
+        }
+    }
+
+    #[test]
+    fn reload_does_not_wait_for_the_old_feeds() {
+        let mut h = harness(None, 15);
+        let stopped = Arc::new(AtomicBool::new(false));
+        h.runner.sources = Box::new(SlowToStop(Arc::clone(&stopped)));
+        let s = sample_state("clear_day");
+        let new_cfg = cfg("");
+        h.runner = h.runner.with_reload(Box::new(move || {
+            Ok((new_cfg.clone(), Box::new(StaticSources::new(s.weather.clone(), s.home.clone())) as Box<dyn DataSources>))
+        }));
+        h.runner.reload_requested.store(true, Ordering::Relaxed);
+        let began = Instant::now();
+        h.runner.run(Some(2)).unwrap();
+        assert!(began.elapsed() < Duration::from_millis(1000), "the render loop waited {:?}", began.elapsed());
+        assert!(!stopped.load(Ordering::Relaxed));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !stopped.load(Ordering::Relaxed) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(stopped.load(Ordering::Relaxed), "the old feeds were still stopped, on another thread");
     }
 
     #[cfg(target_os = "linux")]

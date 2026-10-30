@@ -24,11 +24,15 @@ use serde_json::{json, Value};
 use super::{iso, parse_iso, write_atomic};
 use crate::config::{normalize_url, HomeAssistantConfig};
 use crate::state::{Dt, HomeSnapshot};
-use crate::util::{fnmatch, join_within, Signal};
+use crate::util::{fnmatch, join_within, lock, run_guarded, Signal};
 
 pub const TIMEOUT_SECONDS: u64 = 5;
 pub const MAX_BACKOFF_SECONDS: f64 = 60.0;
 pub const AUTH_RETRY_SECONDS: f64 = 300.0;
+/// An unchanged snapshot is written to the cache at most this often (a changed one at once), so a
+/// 15 s poll does not rewrite the SD card around the clock. After a restart the cached data is then
+/// at most this old, and the first poll replaces it within seconds.
+pub const CACHE_REFRESH_SECONDS: i64 = 600;
 const LOCK_ATTENTION: [&str; 4] = ["unlocked", "jammed", "unlocking", "locking"];
 const UNAVAILABLE: [&str; 2] = ["unavailable", "unknown"];
 const GATE_OPEN: [&str; 3] = ["on", "open", "opening"];
@@ -150,6 +154,11 @@ pub fn parse_template_result(data: &Value, config: &HomeAssistantConfig, now: Op
     })
 }
 
+/// Equal apart from when they were fetched.
+fn same_data(a: &HomeSnapshot, b: &HomeSnapshot) -> bool {
+    HomeSnapshot { fetched_at: b.fetched_at, ..a.clone() } == *b
+}
+
 pub fn snapshot_to_json(s: &HomeSnapshot) -> Value {
     json!({
         "fetched_at": iso(&s.fetched_at),
@@ -188,7 +197,11 @@ pub fn snapshot_from_json(data: &Value) -> Result<HomeSnapshot, String> {
 
 /// POST the template and return the parsed JSON it renders.
 pub fn render_template(url: &str, token: &str, template: &str, timeout: Duration) -> Result<Value, HaError> {
-    let agent = ureq::AgentBuilder::new().timeout(timeout).build();
+    render_template_with(&ureq::AgentBuilder::new().timeout(timeout).build(), url, token, template)
+}
+
+/// `render_template` with an existing agent (the poller keeps one, so connections are reused).
+pub fn render_template_with(agent: &ureq::Agent, url: &str, token: &str, template: &str) -> Result<Value, HaError> {
     let response = agent
         .post(&format!("{url}/api/template"))
         .set("Authorization", &format!("Bearer {token}"))
@@ -221,7 +234,9 @@ struct Inner {
     cache_path: Option<PathBuf>,
     clock: Box<Clock>,
     render: Box<Render>,
-    snapshot: Mutex<Option<HomeSnapshot>>,
+    snapshot: Mutex<Option<Arc<HomeSnapshot>>>,
+    /// What the cache file holds (to skip rewriting it with the same content).
+    saved: Mutex<Option<HomeSnapshot>>,
     failures: AtomicU32,
     auth_logged: AtomicBool,
     stop: Signal,
@@ -240,12 +255,12 @@ impl fmt::Debug for HomeAssistantPoller {
 
 impl HomeAssistantPoller {
     pub fn new(config: HomeAssistantConfig, cache_path: Option<PathBuf>) -> Result<Self, String> {
-        let timeout = Duration::from_secs(TIMEOUT_SECONDS);
+        let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(TIMEOUT_SECONDS)).build();
         Self::with_parts(
             config,
             cache_path,
             Box::new(|| Utc::now().fixed_offset()),
-            Box::new(move |u, t, tpl| render_template(u, t, tpl, timeout)),
+            Box::new(move |u, t, tpl| render_template_with(&agent, u, t, tpl)),
         )
     }
 
@@ -261,6 +276,7 @@ impl HomeAssistantPoller {
             clock,
             render,
             snapshot: Mutex::new(None),
+            saved: Mutex::new(None),
             failures: AtomicU32::new(0),
             auth_logged: AtomicBool::new(false),
             stop: Signal::new(),
@@ -269,8 +285,8 @@ impl HomeAssistantPoller {
         Ok(HomeAssistantPoller { inner: Arc::new(inner), thread: Mutex::new(None) })
     }
 
-    pub fn latest(&self) -> Option<HomeSnapshot> {
-        self.inner.snapshot.lock().unwrap().clone()
+    pub fn latest(&self) -> Option<Arc<HomeSnapshot>> {
+        lock(&self.inner.snapshot).clone()
     }
 
     pub fn age_seconds(&self) -> Option<f64> {
@@ -283,7 +299,7 @@ impl HomeAssistantPoller {
     }
 
     /// One poll. Returns the new snapshot, or `None` on failure (the last good one is kept).
-    pub fn poll_once(&self) -> Option<HomeSnapshot> {
+    pub fn poll_once(&self) -> Option<Arc<HomeSnapshot>> {
         self.inner.poll_once()
     }
 
@@ -292,7 +308,7 @@ impl HomeAssistantPoller {
     }
 
     pub fn start(&self) {
-        let mut slot = self.thread.lock().unwrap();
+        let mut slot = lock(&self.thread);
         if slot.as_ref().is_some_and(|t| !t.is_finished()) {
             return;
         }
@@ -303,7 +319,11 @@ impl HomeAssistantPoller {
                 .name("ha-poller".into())
                 .spawn(move || {
                     while !inner.stop.is_set() {
-                        inner.poll_once();
+                        // A bug in parsing must not end the feed for good: count it as a failure.
+                        if run_guarded("Home Assistant poll", || inner.poll_once()).is_none() {
+                            inner.failures.fetch_add(1, Ordering::Relaxed);
+                            inner.auth_logged.store(false, Ordering::Relaxed);
+                        }
                         let auth = inner.auth_logged.load(Ordering::Relaxed);
                         inner.stop.wait(Duration::from_secs_f64(inner.next_delay(auth)));
                     }
@@ -312,20 +332,25 @@ impl HomeAssistantPoller {
         );
     }
 
-    pub fn stop(&self) {
+    /// Ask the thread to end without waiting for it (it finishes its current request first).
+    pub fn request_stop(&self) {
         self.inner.stop.set();
-        if let Some(t) = self.thread.lock().unwrap().take() {
+    }
+
+    pub fn stop(&self) {
+        self.request_stop();
+        if let Some(t) = lock(&self.thread).take() {
             join_within(t, Duration::from_secs(TIMEOUT_SECONDS + 2));
         }
     }
 
     pub fn is_running(&self) -> bool {
-        self.thread.lock().unwrap().is_some()
+        lock(&self.thread).is_some()
     }
 }
 
 impl Inner {
-    fn poll_once(&self) -> Option<HomeSnapshot> {
+    fn poll_once(&self) -> Option<Arc<HomeSnapshot>> {
         let result = (self.render)(&self.url, &self.config.token, &self.template)
             .and_then(|data| parse_template_result(&data, &self.config, Some((self.clock)())));
         let snap = match result {
@@ -338,6 +363,8 @@ impl Inner {
                 return None;
             }
             Err(e) => {
+                // Not an auth problem (any more): back off normally (15-60 s), not the 300 s auth delay.
+                self.auth_logged.store(false, Ordering::Relaxed);
                 let failures = self.failures.fetch_add(1, Ordering::Relaxed) + 1;
                 // First failure and then every 10th, so a long outage does not spam the log.
                 if failures == 1 || failures % 10 == 0 {
@@ -351,8 +378,12 @@ impl Inner {
             log::info!("Home Assistant poll recovered after {before} failure(s)");
         }
         self.auth_logged.store(false, Ordering::Relaxed);
-        *self.snapshot.lock().unwrap() = Some(snap.clone());
-        self.save_cache(&snap);
+        // A poll finishing after a reload asked it to stop must not overwrite the new feed's cache.
+        if !self.stop.is_set() {
+            self.save_cache(&snap);
+        }
+        let snap = Arc::new(snap);
+        *lock(&self.snapshot) = Some(Arc::clone(&snap));
         Some(snap)
     }
 
@@ -376,17 +407,28 @@ impl Inner {
             .and_then(|t| serde_json::from_str::<Value>(&t).map_err(|e| e.to_string()))
             .and_then(|v| snapshot_from_json(&v));
         match loaded {
-            Ok(s) => *self.snapshot.lock().unwrap() = Some(s),
+            Ok(s) => {
+                *lock(&self.saved) = Some(s.clone());
+                *lock(&self.snapshot) = Some(Arc::new(s));
+            }
             Err(_) => log::warn!("ignoring unreadable Home Assistant cache {}", path.display()),
         }
     }
 
+    /// Write the cache when the data changed, or to refresh its time every `CACHE_REFRESH_SECONDS`.
     fn save_cache(&self, snap: &HomeSnapshot) {
         let Some(path) = &self.cache_path else {
             return;
         };
-        if let Err(e) = write_atomic(path, &snapshot_to_json(snap).to_string(), ".tmp") {
-            log::warn!("could not write Home Assistant cache: {:?}", e.kind());
+        let mut saved = lock(&self.saved);
+        if saved.as_ref().is_some_and(|old| {
+            same_data(old, snap) && (snap.fetched_at - old.fetched_at).num_seconds() < CACHE_REFRESH_SECONDS
+        }) {
+            return;
+        }
+        match write_atomic(path, &snapshot_to_json(snap).to_string()) {
+            Ok(()) => *saved = Some(snap.clone()),
+            Err(e) => log::warn!("could not write Home Assistant cache: {:?}", e.kind()),
         }
     }
 }
@@ -714,6 +756,72 @@ mod tests {
         assert_eq!(scripted(vec![], clock(), Some(path.clone())).latest().as_ref(), Some(&snap));
         std::fs::write(&path, "corrupt").unwrap();
         assert!(scripted(vec![], clock(), Some(path)).latest().is_none());
+    }
+
+    #[test]
+    fn cache_is_rewritten_only_on_change_or_every_ten_minutes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("home.json");
+        let now = clock();
+        let results = vec![Ok(fixture(MIXED)), Ok(fixture(MIXED)), Ok(fixture(QUIET)), Ok(fixture(QUIET)), Ok(fixture(QUIET))];
+        let poller = scripted(results, Arc::clone(&now), Some(path.clone()));
+        let cached_at = || snapshot_from_json(&serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap())
+            .unwrap();
+        let t0 = poller.poll_once().unwrap().fetched_at;
+        assert_eq!(cached_at().fetched_at, t0);
+        *now.lock().unwrap() += Dur::seconds(15);
+        poller.poll_once().unwrap(); // same data: not written
+        assert_eq!(cached_at().fetched_at, t0);
+        *now.lock().unwrap() += Dur::seconds(15);
+        let quiet = poller.poll_once().unwrap(); // changed: written at once
+        assert_eq!(cached_at(), *quiet);
+        *now.lock().unwrap() += Dur::seconds(CACHE_REFRESH_SECONDS - 1);
+        poller.poll_once().unwrap();
+        assert_eq!(cached_at().fetched_at, quiet.fetched_at);
+        *now.lock().unwrap() += Dur::seconds(1);
+        let late = poller.poll_once().unwrap(); // unchanged, but ten minutes on: refreshed
+        assert_eq!(cached_at().fetched_at, late.fetched_at);
+        // a restart with the same data does not rewrite the file straight away either
+        let restarted = scripted(vec![Ok(fixture(QUIET))], Arc::clone(&now), Some(path.clone()));
+        *now.lock().unwrap() += Dur::seconds(15);
+        restarted.poll_once().unwrap();
+        assert_eq!(cached_at().fetched_at, late.fetched_at);
+    }
+
+    #[test]
+    fn auth_back_off_ends_when_the_error_changes() {
+        let auth = || Err(HaError::Auth("HTTP 401".into()));
+        let poller = scripted(vec![auth(), down()], clock(), None);
+        poller.poll_once();
+        assert!(poller.inner.auth_logged.load(Ordering::Relaxed));
+        poller.poll_once();
+        assert!(!poller.inner.auth_logged.load(Ordering::Relaxed));
+        assert_eq!(poller.next_delay(poller.inner.auth_logged.load(Ordering::Relaxed)), 30.0);
+    }
+
+    #[test]
+    fn a_panicking_poll_does_not_end_the_thread() {
+        let calls = Arc::new(AtomicU32::new(0));
+        let c = Arc::clone(&calls);
+        let mut cfg = make_config("http://127.0.0.1:1");
+        cfg.poll_seconds = 0; // retry at once (the back-off grows from zero)
+        let poller = HomeAssistantPoller::with_parts(cfg, None, Box::new(|| at(2026, 1, 1, 0, 0)), Box::new(move |_, _, _| {
+            if c.fetch_add(1, Ordering::Relaxed) == 0 {
+                panic!("bug in a poll");
+            }
+            Ok(fixture(QUIET))
+        }))
+        .unwrap();
+        poller.start();
+        for _ in 0..100 {
+            if poller.latest().is_some() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        poller.stop();
+        assert!(poller.latest().is_some());
+        assert!(calls.load(Ordering::Relaxed) >= 2);
     }
 
     #[test]

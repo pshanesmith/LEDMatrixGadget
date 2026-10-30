@@ -79,10 +79,10 @@ fn widgets_stay_inside_their_region() {
             for t in [0.0, 1.0] {
                 let mut state = variant("rain_then_snow");
                 {
-                    let w = state.weather.as_mut().unwrap();
+                    let w = std::sync::Arc::make_mut(state.weather.as_mut().unwrap());
                     w.daily.low = low;
                     w.daily.high = high;
-                    let h = state.home.as_mut().unwrap();
+                    let h = std::sync::Arc::make_mut(state.home.as_mut().unwrap());
                     h.locks_unlocked = count;
                     h.lights_on = count;
                     h.locks_unavailable = 1;
@@ -247,7 +247,7 @@ fn no_bolt_without_a_tier_and_layout_is_the_old_three_cells() {
     let base = variant("counts_zero");
     assert!(base.home.as_ref().unwrap().power_tier.is_none());
     let mut with_tier = base.clone();
-    with_tier.home.as_mut().unwrap().power_tier = Some("on_peak".into());
+    std::sync::Arc::make_mut(with_tier.home.as_mut().unwrap()).power_tier = Some("on_peak".into());
     let (a, b) = (render(&base, 0.0), render(&with_tier, 0.0));
     assert_ne!(a, b);
     // gate icon sits in the middle of the third 21 px cell without the bolt
@@ -271,7 +271,7 @@ fn bolt_row_stays_inside_the_region() {
     for count in [0u32, 9, 12, 99, 250] {
         for t in [0.0, 1.0] {
             let mut state = variant("tier_counts_twelve");
-            let h = state.home.as_mut().unwrap();
+            let h = std::sync::Arc::make_mut(state.home.as_mut().unwrap());
             h.locks_unlocked = count;
             h.lights_on = count;
             let img = render(&state, t);
@@ -311,10 +311,34 @@ fn updates_survive_the_cache_and_old_caches_load() {
 fn maintenance_dot_is_yellow_beside_the_corner() {
     let state = variant("updates_pending");
     let mut quiet = state.clone();
-    quiet.home.as_mut().unwrap().updates_pending = 0;
+    std::sync::Arc::make_mut(quiet.home.as_mut().unwrap()).updates_pending = 0;
     for (st, expect) in [(state, widgets::YELLOW), (quiet, [0, 0, 0])] {
         let mut frame = Img::black(64, 64);
         widgets::draw_home(&mut frame, layout::HOME, &st, 0.0);
         assert_eq!(frame.get(62, 63), expect);
     }
+}
+
+// --- next change once the forecast runs out ----------------------------------------------------
+
+fn next_change_at(mut state: AppState, now: chrono::DateTime<chrono::FixedOffset>) -> Img {
+    state.now = now;
+    let mut frame = Img::black(64, 64);
+    widgets::draw_next_change(&mut frame, layout::NEXT_CHANGE, &state, 0.0);
+    frame
+}
+
+#[test]
+fn steady_is_only_claimed_as_far_as_the_forecast_reaches() {
+    let clear = sample_state("clear_day"); // hourly points from NOON to NOON + 47 h, no change
+    let hours = chrono::Duration::hours;
+    let full = next_change_at(clear.clone(), *NOON);
+    assert_eq!(next_change_at(clear.clone(), *NOON + hours(20)), full); // still 24 h ahead
+    let short = next_change_at(clear.clone(), *NOON + hours(40)); // "STEADY 7H"
+    assert_ne!(short, full);
+    // every hour in the past: the same "--" as no weather at all
+    let none = next_change_at(AppState::new(*NOON), *NOON);
+    assert_eq!(next_change_at(clear.clone(), *NOON + hours(47)), none);
+    assert_eq!(next_change_at(clear, *NOON + hours(72)), none);
+    assert_ne!(short, none);
 }
