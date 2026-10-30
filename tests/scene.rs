@@ -274,3 +274,32 @@ fn deterministic_for_same_time() {
     let b = build_default_compositor(true, false).render(&st, 7.3);
     assert_eq!(a, b);
 }
+
+/// Mean luma difference between the topmost ridge pixels above y = 20 (the far ridges) and the sky
+/// directly above them.
+fn far_ridge_contrast(eq: i32, cond: Condition) -> f64 {
+    let sky = matrix_display::scene::sky::sky_image(eq, Some(cond));
+    let t = mountains::terrain(eq, Some(cond), mountains::season_key(296));
+    let (rgb, mask) = &*t;
+    let luma = |p: [u8; 3]| 0.3 * p[0] as f64 + 0.59 * p[1] as f64 + 0.11 * p[2] as f64;
+    let (mut sum, mut n) = (0.0, 0);
+    for x in 0..rgb.w {
+        if let Some(y) = (1..21).find(|&y| mask.get(x, y) > 0) {
+            sum += (luma(sky.get(x, y - 1)) - luma(rgb.get(x, y))).abs();
+            n += 1;
+        }
+    }
+    assert!(n > 20, "far ridges found in {n} columns");
+    sum / n as f64
+}
+
+#[test]
+fn far_ridges_stand_out_from_the_sky_by_day() {
+    for cond in [Condition::Clear, Condition::PartlyCloudy, Condition::Overcast, Condition::Rain, Condition::Snow] {
+        for eq in [40, 28] {
+            let c = far_ridge_contrast(eq, cond);
+            eprintln!("{cond:?} eq {eq}: {c:.1}");
+            assert!(c > 30.0, "{cond:?} at elevation {eq}/40: contrast {c:.1}");
+        }
+    }
+}

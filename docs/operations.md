@@ -25,6 +25,7 @@ Everyday commands (the service is `matrix-display`).
 - **Home Assistant URL** defaults to `http://homeassistant:8123`; change `[homeassistant].url`, or set `MATRIX_HA_URL` in `/etc/matrix/secrets.env`.
 - **Token:** only in `/etc/matrix/secrets.env` (`MATRIX_HA_TOKEN=`, mode 600, root). If it leaks, delete it in Home Assistant (profile > Security) and create a new one.
 - **Brightness:** `[display] brightness` (day) and `max_brightness` (hard ceiling, 70). After sunset the display is halved automatically. The supply is rated 4 A; do not raise the ceiling much.
+- **Overnight sleep:** `[schedule] sleep_start` and `sleep_end` blank the panel every day between two local times (24-hour `HH:MM`, in the forecast location's time zone), for example midnight to 6 AM: `sudo /opt/matrix/bin/matrix-set-config /etc/matrix/config.toml schedule sleep_start 00:00`, the same with `sleep_end 06:00`, then `sudo systemctl reload matrix-display`. The window can cross midnight (`22:00` to `06:00`); the panel wakes by itself at the end time. Set both or neither (the default is no sleep); a bad value stops the service with `config error` (exit status 2, see the log). While asleep the program draws nothing and writes nothing to the panel but keeps fetching weather and Home Assistant data and pinging the watchdog; the log says `sleeping: the panel is blank until 06:00` and `waking`. To turn it off, remove the two lines from `/etc/matrix/config.toml` and reload.
 
 ## Flicker
 The panel is refreshed by software timing, so flicker is a trade between colour depth and refresh rate. With the defaults (`pwm_bits = 11`) the measured refresh was about 108 Hz; each bit removed roughly doubles it. Try in this order, restarting after each (`sudo systemctl restart matrix-display`; a reload does not change panel timing):
@@ -39,7 +40,7 @@ Date; a scene with the current condition (sun/moon, clouds, rain, snow, fog, thu
 ## Troubleshooting
 | Symptom | Check |
 |---|---|
-| Panel blank | `systemctl status matrix-display`; `journalctl -u matrix-display -n 50`; supply connected; `sudo ./tools/test-matrix.sh` after stopping the service |
+| Panel blank | the sleep window (`[schedule]`, log line `sleeping`); `systemctl status matrix-display`; `journalctl -u matrix-display -n 50`; supply connected; `sudo ./tools/test-matrix.sh` after stopping the service |
 | Flicker | `vcgencmd get_throttled` (want `0x0`); `isolcpus` active in `/proc/cmdline`; try `gpio_slowdown = 3` |
 | Wrong colours | `rgb_sequence` in `[display]` |
 | No weather | log shows `weather refresh failed`; check network and `[location]` |

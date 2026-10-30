@@ -29,6 +29,12 @@ scene_fps = 15           # 1-30 frames a second
 # realtime_priority = 50 # 1-99 runs the refresh thread as real-time (stops flicker during network/SD card activity); 0 = off. Needs the isolcpus setup
 drop_privileges = true   # the panel driver drops root after GPIO setup; the service sets MATRIX_DROP_PRIVILEGES=0 if the unprivileged user cannot reach its files
 
+[schedule]
+# A daily window when the panel is blank (local time at the forecast location, 24-hour HH:MM, may cross
+# midnight, e.g. "22:00" to "06:00"). It wakes by itself at sleep_end. Set both or neither; the default is no sleep.
+# sleep_start = "00:00"
+# sleep_end = "06:00"
+
 [weather]
 refresh_seconds = 900    # at least 60
 

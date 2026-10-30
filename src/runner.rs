@@ -28,6 +28,9 @@ pub const BRIGHTNESS_EVERY: f64 = 30.0;
 pub const STATS_EVERY: f64 = 60.0;
 /// About 10 s at 15 fps, then let systemd restart us.
 pub const MAX_CONSECUTIVE_RENDER_FAILURES: u32 = 150;
+/// While asleep the loop only ticks this often (seconds): enough for the watchdog, waking on time
+/// and the stop flag.
+pub const SLEEP_TICK: f64 = 0.5;
 
 /// Where caches live: $MATRIX_STATE_DIR, else /var/lib/matrix-display when writable, else ~/.cache.
 pub fn state_dir() -> PathBuf {
@@ -393,6 +396,7 @@ impl<D: Display> Runner<D> {
         let mut last_brightness = start - BRIGHTNESS_EVERY; // force an update on the first frame
         let mut last_good: Option<Img> = None;
         let mut frames = 0u64;
+        let mut asleep = false;
         (self.notify)("READY=1");
         log::info!("running at {fps} fps, brightness cap {}%", self.cfg.display.max_brightness);
         while !flag_is_set(&self.stop) && max_frames.is_none_or(|m| frames < m) {
@@ -405,6 +409,31 @@ impl<D: Display> Runner<D> {
                 }
             }
             let state = self.build_state();
+            let should_sleep = self.cfg.schedule.sleep.is_some_and(|w| w.contains(state.now.time()));
+            if should_sleep != asleep {
+                asleep = should_sleep;
+                if asleep {
+                    log::info!("sleeping: the panel is blank until {}", self.cfg.schedule.sleep.map_or_else(
+                        String::new, |w| w.end.format("%H:%M").to_string()));
+                    self.display.blank()?;
+                } else {
+                    log::info!("waking");
+                    last_brightness = now_m - BRIGHTNESS_EVERY; // set it before the first frame
+                    next_frame = now_m;
+                    last_stats = now_m;
+                    self.stats.reset();
+                }
+            }
+            if asleep {
+                // No rendering and no panel writes; the data feeds keep running in their own threads.
+                frames += ((SLEEP_TICK / period).round() as u64).max(1); // a tick spans this many frame periods
+                if now_m - last_ping >= 1.0 {
+                    (self.notify)("WATCHDOG=1");
+                    last_ping = now_m;
+                }
+                (self.sleep)(SLEEP_TICK);
+                continue;
+            }
             if now_m - last_brightness >= BRIGHTNESS_EVERY {
                 let daily = state.weather.as_ref().map(|w| &w.daily);
                 self.display.set_brightness(brightness_for(state.now, daily, &self.cfg.display));
@@ -776,5 +805,159 @@ mod tests {
         let h = harness(None, 15);
         let st = h.runner.build_state();
         assert_eq!(st.now.offset(), NOON.offset());
+    }
+
+    // -- sleep window ---------------------------------------------------------------------
+    /// Counts the frames the compositor is asked to draw.
+    fn counting_compositor() -> (Compositor, Rc<Cell<u32>>) {
+        let drawn = Rc::new(Cell::new(0));
+        let d = Rc::clone(&drawn);
+        let mut comp = Compositor::new(false);
+        comp.register("temps", Box::new(move |frame, rect, _, _| {
+            d.set(d.get() + 1);
+            frame.put(rect.x, rect.y, [255, 0, 0]);
+        }))
+        .unwrap();
+        (comp, drawn)
+    }
+
+    /// Counts `show` calls (a blank frame included).
+    #[derive(Default)]
+    struct CountingDisplay {
+        shows: Rc<Cell<u32>>,
+        last_frame: Option<Img>,
+        brightness_sets: Rc<Cell<u32>>,
+    }
+
+    impl Display for CountingDisplay {
+        fn width(&self) -> usize {
+            64
+        }
+
+        fn height(&self) -> usize {
+            64
+        }
+
+        fn show(&mut self, image: &Img) -> Result<()> {
+            self.shows.set(self.shows.get() + 1);
+            self.last_frame = Some(image.clone());
+            Ok(())
+        }
+
+        fn set_brightness(&mut self, _: u8) {
+            self.brightness_sets.set(self.brightness_sets.get() + 1);
+        }
+    }
+
+    struct Sleeper {
+        runner: Runner<CountingDisplay>,
+        drawn: Rc<Cell<u32>>,
+        shows: Rc<Cell<u32>>,
+        brightness_sets: Rc<Cell<u32>>,
+        notes: Rc<RefCell<Vec<String>>>,
+        elapsed: Rc<Cell<f64>>,
+    }
+
+    /// A runner whose local clock starts at `at` (hh, mm, ss on the sample day) and advances with the
+    /// fake monotonic clock, with `[schedule]` set from `window` (start, end).
+    fn sleeper(window: Option<(&str, &str)>, at: (u32, u32, u32)) -> Sleeper {
+        use chrono::TimeZone;
+        let schedule = window
+            .map(|(a, b)| format!("[schedule]\nsleep_start = \"{a}\"\nsleep_end = \"{b}\""))
+            .unwrap_or_default();
+        let config = cfg(&format!("[display]\nscene_fps = 10\n{schedule}"));
+        let s = sample_state("clear_day");
+        let base = crate::samples::TZ.with_ymd_and_hms(2026, 10, 23, at.0, at.1, at.2).unwrap();
+        let elapsed = Rc::new(Cell::new(0.0));
+        let (e1, e2, e3) = (Rc::clone(&elapsed), Rc::clone(&elapsed), Rc::clone(&elapsed));
+        let (comp, drawn) = counting_compositor();
+        let display = CountingDisplay::default();
+        let (shows, brightness_sets) = (Rc::clone(&display.shows), Rc::clone(&display.brightness_sets));
+        let notes = Rc::new(RefCell::new(Vec::new()));
+        let n = Rc::clone(&notes);
+        let runner = Runner::new(config, display, Box::new(StaticSources::new(s.weather.clone(), s.home.clone())), comp)
+            .with_clock(Box::new(move || base + chrono::Duration::milliseconds((e1.get() * 1000.0) as i64)))
+            .with_timing(Box::new(move || e2.get()), Box::new(move |secs| e3.set(e3.get() + secs)))
+            .with_notify(Box::new(move |m| n.borrow_mut().push(m.to_string())));
+        Sleeper { runner, drawn, shows, brightness_sets, notes, elapsed }
+    }
+
+    #[test]
+    fn no_schedule_never_sleeps() {
+        let mut h = sleeper(None, (3, 0, 0));
+        h.runner.run(Some(20)).unwrap();
+        assert_eq!(h.drawn.get(), 20);
+    }
+
+    #[test]
+    fn asleep_shows_a_blank_screen_once_and_does_no_work() {
+        let mut h = sleeper(Some(("00:00", "06:00")), (3, 0, 0));
+        h.runner.run(Some(100)).unwrap(); // 10 s at 10 fps
+        assert_eq!(h.drawn.get(), 0, "nothing is rendered while asleep");
+        assert_eq!(h.shows.get(), 1, "only the blank frame is written");
+        assert!(h.runner.display.last_frame.as_ref().unwrap().is_blank());
+        assert_eq!(h.brightness_sets.get(), 0);
+        assert!((h.elapsed.get() - 10.0).abs() < 1.0, "the frame budget still spans the same wall time");
+    }
+
+    #[test]
+    fn the_watchdog_keeps_being_pinged_while_asleep() {
+        let mut h = sleeper(Some(("00:00", "06:00")), (3, 0, 0));
+        h.runner.run(Some(100)).unwrap();
+        let notes = h.notes.borrow();
+        assert!(notes.iter().filter(|n| *n == "WATCHDOG=1").count() >= 8, "{notes:?}");
+        assert_eq!(notes.last().map(String::as_str), Some("STOPPING=1"));
+    }
+
+    #[test]
+    fn midnight_to_six_edges() {
+        for (at, asleep) in [
+            ((23, 59, 59), false), ((0, 0, 0), true), ((0, 0, 1), true), ((5, 59, 59), true),
+            ((6, 0, 0), false), ((12, 0, 0), false),
+        ] {
+            let mut h = sleeper(Some(("00:00", "06:00")), at);
+            h.runner.run(Some(1)).unwrap();
+            assert_eq!(h.drawn.get() == 0, asleep, "{at:?}");
+        }
+    }
+
+    #[test]
+    fn a_window_across_midnight_sleeps_on_both_sides_of_it() {
+        for (at, asleep) in [
+            ((21, 59, 59), false), ((22, 0, 0), true), ((23, 30, 0), true), ((0, 30, 0), true),
+            ((5, 59, 59), true), ((6, 0, 0), false), ((12, 0, 0), false),
+        ] {
+            let mut h = sleeper(Some(("22:00", "06:00")), at);
+            h.runner.run(Some(1)).unwrap();
+            assert_eq!(h.drawn.get() == 0, asleep, "{at:?}");
+        }
+    }
+
+    #[test]
+    fn wakes_by_itself_at_the_end_of_the_window() {
+        let mut h = sleeper(Some(("00:00", "06:00")), (5, 59, 50));
+        h.runner.run(Some(200)).unwrap(); // 20 s: 10 s asleep, then awake
+        assert!(h.drawn.get() > 80 && h.drawn.get() < 110, "drawn {}", h.drawn.get());
+        let frame = h.runner.display.last_frame.as_ref().unwrap();
+        assert!(!frame.is_blank());
+        assert!(h.brightness_sets.get() >= 1, "brightness is set again on waking");
+    }
+
+    #[test]
+    fn falls_asleep_at_the_start_of_the_window() {
+        let mut h = sleeper(Some(("00:00", "06:00")), (23, 59, 55));
+        h.runner.run(Some(100)).unwrap();
+        let drawn = h.drawn.get();
+        assert!(drawn > 40 && drawn < 70, "drawn {drawn}"); // about 5 s awake at 10 fps
+        assert!(h.runner.display.last_frame.as_ref().unwrap().is_blank());
+        assert_eq!(h.shows.get(), drawn + 1, "one extra write: the blank frame");
+    }
+
+    #[test]
+    fn the_window_follows_the_forecast_time_zone() {
+        // The sample forecast is at UTC-4. The fake clock is in that zone, so 03:00 there is asleep
+        // no matter what the host zone is.
+        let h = sleeper(Some(("00:00", "06:00")), (3, 0, 0));
+        assert_eq!(h.runner.build_state().now.time(), chrono::NaiveTime::from_hms_opt(3, 0, 0).unwrap());
     }
 }

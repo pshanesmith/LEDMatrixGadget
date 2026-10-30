@@ -64,6 +64,32 @@ fn emulated_run_saves_a_gif() {
     assert!(bytes.starts_with(b"GIF89a"));
 }
 
+/// The last emulated frame of a 1 s run with `[schedule]` sleeping from `start` to `end` (local time at the
+/// sample forecast's zone, which `--sample` uses).
+fn emulated_frame_with_sleep(start: &str, end: &str) -> matrix_display::gfx::Img {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path().join("c.toml");
+    std::fs::write(&cfg, format!("[schedule]\nsleep_start = \"{start}\"\nsleep_end = \"{end}\"\n")).unwrap();
+    let out = dir.path().join("frame.png");
+    let r = bin("matrix-display")
+        .args(["--emulate", "--offline", "--sample", "clear_day", "--seconds", "1", "--scale", "1", "--config"])
+        .arg(&cfg)
+        .arg("--out")
+        .arg(&out)
+        .output()
+        .unwrap();
+    assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stderr));
+    load_png(&out)
+}
+
+#[test]
+fn the_emulated_screen_is_blank_inside_the_sleep_window_and_drawn_outside_it() {
+    // The two windows are complements, so exactly one of them covers the present moment.
+    let first = emulated_frame_with_sleep("00:00", "12:00");
+    let second = emulated_frame_with_sleep("12:00", "00:00");
+    assert_ne!(first.is_blank(), second.is_blank(), "exactly one of the two runs is asleep");
+}
+
 #[test]
 fn bad_config_exits_with_status_2() {
     let dir = tempfile::tempdir().unwrap();
