@@ -15,7 +15,15 @@ fail() { msgs+=("FAIL $*"); bad=1; }
 # 1. The service is running.
 if systemctl is-active --quiet "$UNIT"; then ok "service $UNIT is active"; else fail "service $UNIT is not running (journalctl -u $UNIT -n 50)"; fi
 
-# 2. It is producing frames: the loop logs a performance line each minute; 15 fps is about 900 frames.
+# 2. It is producing frames: the loop logs a performance line each minute, about scene_fps x 60 frames
+#    (900 at the default 15 fps); fewer than ~89% of that is a problem.
+CONFIG=${MATRIX_CONFIG:-/etc/matrix/config.toml}
+fps=$(awk '/^[[:space:]]*\[/{sec=$0; sub(/#.*/, "", sec); gsub(/[[:space:]]/, "", sec)}
+           sec=="[display]" && /^[[:space:]]*scene_fps[[:space:]]*=/{v=$0; sub(/^[^=]*=[[:space:]]*/, "", v); sub(/[^0-9].*$/, "", v); print v; exit}' \
+      "$CONFIG" 2>/dev/null)
+[[ $fps =~ ^[0-9]+$ ]] && (( fps > 0 )) || fps=15
+expected=$(( fps * 60 ))
+minimum=$(( expected * 89 / 100 ))
 last=$(journalctl -u "$UNIT" --since "-3min" --no-pager -o cat -g 'frames=' 2>/dev/null | tail -1)
 if [[ -z $last ]]; then
   up=$(systemctl show "$UNIT" -p ActiveEnterTimestampMonotonic --value 2>/dev/null)
@@ -24,7 +32,7 @@ if [[ -z $last ]]; then
   else fail "no frame statistics in the last 3 minutes (the render loop may be stuck)"; fi
 else
   frames=$(sed -n 's/.*frames=\([0-9]*\).*/\1/p' <<<"$last")
-  if (( ${frames:-0} >= 800 )); then ok "rendering $frames frames a minute"; else fail "only ${frames:-0} frames in the last minute (expected about 900)"; fi
+  if (( ${frames:-0} >= minimum )); then ok "rendering $frames frames a minute"; else fail "only ${frames:-0} frames in the last minute (expected about $expected at $fps fps)"; fi
 fi
 
 # 3. Kernel trouble since boot: hung tasks, memory exhaustion, undervoltage, SD card or Wi-Fi chip errors.

@@ -4,7 +4,9 @@
 #
 #   ./setup/03-install-service.sh                 dry run (default)
 #   sudo ./setup/03-install-service.sh --apply    deploy, install, enable and start
-# Run it again later (from /opt/matrix/setup or from a checkout) to UPDATE: it pulls, reinstalls, restarts.
+# To UPDATE later: a release install (the usual one) runs install.sh again
+#   curl -fsSL https://github.com/pshanesmith/LEDMatrixGadget/releases/latest/download/install.sh | sudo bash
+# and a source install runs this script again (from /opt/matrix/setup or a checkout): it pulls, rebuilds, restarts.
 #
 # Options: --release DIR  install the unpacked release in DIR (what install.sh does); no clone, no build
 #          --repo URL    GitHub clone URL (default: the 'origin' of the checkout you run this from)
@@ -15,7 +17,8 @@
 #          --no-drop     keep running as root (skip the privilege drop)
 #          --uninstall   stop and remove the service (keeps /opt/matrix, /etc/matrix and the state dir)
 #          --yes         skip confirmation prompts
-# Layout:  /opt/matrix        bin/ (the programs), setup/, systemd/, config/, tools/ and VERSION from a release,
+# Layout:  /opt/matrix        bin/ (the programs), setup/, systemd/, config/, tools/, docs/, the README, DESIGN.md,
+#                             LICENSE and VERSION from a release,
 #                             or a clone of the repository with target/ (the build) and bin/ inside
 #                             (root-owned, world-readable)
 #          /etc/matrix        config.toml, secrets.env (0600), deploy_key (0600, read-only deploy key)
@@ -47,7 +50,7 @@ main() {
       --no-drop) NODROP=1 ;;
       --uninstall) UNINSTALL=1 ;;
       --yes) ASSUME_YES=1 ;;
-      -h|--help) sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; return 0 ;;
+      -h|--help) sed -n '2,27p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; return 0 ;;
       *) die "unknown option: $1 (try --help)" ;;
     esac
     shift
@@ -67,6 +70,16 @@ main() {
     return 0
   fi
 
+  # Ask before anything is changed: both paths below replace the code in $DEPLOY straight away.
+  if [[ -n $RELEASE ]]; then
+    confirm "This installs the release in $RELEASE into $DEPLOY and installs a service that drives the LED panel."
+  else
+    if [[ -d $DEPLOY && ! -d $DEPLOY/.git && -f $DEPLOY/VERSION ]]; then
+      die "$DEPLOY holds a release install. Update it with install.sh (curl -fsSL https://github.com/pshanesmith/LEDMatrixGadget/releases/latest/download/install.sh | sudo bash), or move it away to switch to a source install."
+    fi
+    confirm "This deploys the code from GitHub to $DEPLOY (building it unless --binary is given) and installs a service that drives the LED panel."
+  fi
+
   if [[ -n $RELEASE ]]; then
     step "Install the release into $DEPLOY"
     [[ -x $RELEASE/bin/matrix-display ]] || die "$RELEASE is not an unpacked release (no bin/matrix-display)"
@@ -76,11 +89,14 @@ main() {
     echo "  release: $(cat "$RELEASE/VERSION" 2>/dev/null || echo unknown)   target: $DEPLOY"
     run install -d -m 755 "$DEPLOY"
     local part
-    for part in bin setup systemd config tools; do
+    for part in bin setup systemd config tools docs; do
       run rm -rf "${DEPLOY:?}/$part"
-      run cp -a "$RELEASE/$part" "$DEPLOY/$part"
+      # docs/ is missing from very old releases
+      if [[ -e $RELEASE/$part ]]; then run cp -a "$RELEASE/$part" "$DEPLOY/$part"; fi
     done
-    run install -m 644 "$RELEASE/VERSION" "$DEPLOY/VERSION"
+    for part in VERSION README.md DESIGN.md LICENSE; do
+      if [[ -f $RELEASE/$part ]]; then run install -m 644 "$RELEASE/$part" "$DEPLOY/$part"; fi
+    done
     run chown -R root:root "$DEPLOY"
     run chmod -R go+rX "$DEPLOY"
     if (( ! DRY_RUN )); then
@@ -177,7 +193,11 @@ main() {
     if [[ -f $SELF_REPO/secrets.env ]]; then run install -m 600 -o root -g root "$SELF_REPO/secrets.env" "$ETC/secrets.env"
     else run install -m 600 -o root -g root "$DEPLOY/config/secrets.env.example" "$ETC/secrets.env"
       warn "put MATRIX_HA_TOKEN in $ETC/secrets.env or the Home Assistant row stays off"; fi
-  else echo "  keeping existing $ETC/secrets.env"; fi
+  else
+    echo "  keeping existing $ETC/secrets.env"
+    # The service refuses a secrets file that group or others can write.
+    run chmod go-w "$ETC/secrets.env"
+  fi
   run install -d -m 755 -o daemon -g daemon "$STATE"
 
   step "Privilege drop check"
@@ -203,7 +223,6 @@ main() {
   write_file /etc/systemd/system/matrix-health.service \
     "$(sed -e "s#@REPO@#$DEPLOY#g" "$SELF_REPO/systemd/matrix-health.service")"
   write_file /etc/systemd/system/matrix-health.timer "$(cat "$SELF_REPO/systemd/matrix-health.timer")"
-  confirm "This deploys the code from GitHub to $DEPLOY and installs a service that drives the LED panel."
   run systemctl daemon-reload
   run systemctl enable matrix-display.service
   run systemctl enable --now matrix-health.timer
@@ -222,7 +241,12 @@ main() {
     journalctl -u matrix-display.service --no-pager -n 12 | cut -c1-200
   fi
   echo
-  if (( DRY_RUN )); then info "dry run complete; nothing changed."; else info "installed from $URL ($REF). Logs: journalctl -u matrix-display -f   Update: sudo $DEPLOY/setup/03-install-service.sh --apply"; fi
+  if (( DRY_RUN )); then info "dry run complete; nothing changed."
+  elif [[ -n $RELEASE ]]; then
+    info "installed release $(cat "$DEPLOY/VERSION" 2>/dev/null || echo unknown). Logs: journalctl -u matrix-display -f   Update: curl -fsSL https://github.com/pshanesmith/LEDMatrixGadget/releases/latest/download/install.sh | sudo bash"
+  else
+    info "installed from $URL ($REF). Logs: journalctl -u matrix-display -f   Update: sudo $DEPLOY/setup/03-install-service.sh --apply"
+  fi
 }
 
 main "$@"; exit $?

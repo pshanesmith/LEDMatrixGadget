@@ -51,7 +51,7 @@ fn matches_the_golden_renders() {
 
 fn with_current(state: &AppState, edit: impl FnOnce(&mut matrix_display::state::CurrentWeather)) -> AppState {
     let mut s = state.clone();
-    edit(&mut s.weather.as_mut().unwrap().current);
+    edit(&mut std::sync::Arc::make_mut(s.weather.as_mut().unwrap()).current);
     s
 }
 
@@ -138,7 +138,7 @@ fn wind_and_cloud_cover_extremes_do_not_crash() {
 
 #[test]
 fn sunrise_and_sunset_follow_the_clock() {
-    let d = sample_state("clear_day").weather.unwrap().daily;
+    let d = sample_state("clear_day").weather.unwrap().daily.clone();
     assert!(sun_position(*NOON, true, d.sunrise, d.sunset).elev > 0.9);
     assert!(sun_position(d.sunrise, true, d.sunrise, d.sunset).elev.abs() < 0.01);
     let at_hour = |h| -> Dt { chrono::Timelike::with_hour(&*NOON, h).unwrap() };

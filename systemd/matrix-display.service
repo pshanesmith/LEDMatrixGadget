@@ -11,13 +11,19 @@ NotifyAccess=main
 EnvironmentFile=-/etc/matrix/secrets.env
 Environment=MATRIX_STATE_DIR=/var/lib/matrix-display
 @DROP_ENV@
-WorkingDirectory=/var/lib/matrix-display
+# Not the state directory: that one is writable by the unprivileged user the process drops to, and
+# nothing should be read from it as configuration. (The program only reads /etc/matrix/secrets.env
+# when MATRIX_STATE_DIR is set, too.)
+WorkingDirectory=/
 ExecStart=@BIN@ --config /etc/matrix/config.toml
 ExecReload=/bin/kill -HUP $MAINPID
 
 # The panel needs root for GPIO timing; the library then drops to an unprivileged user.
 Restart=always
 RestartSec=5
+# Exit status 2 is a configuration (or command line) error: restarting cannot fix it, so stop and
+# let the journal and tools/health-check.sh show it. Fix the config, then systemctl restart.
+RestartPreventExitStatus=2
 # The app pings systemd about once a second; if the render loop hangs for 30 s it is restarted.
 WatchdogSec=30
 TimeoutStopSec=15

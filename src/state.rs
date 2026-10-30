@@ -2,6 +2,8 @@
 //!
 //! All datetimes carry a fixed UTC offset, the forecast location's.
 
+use std::sync::Arc;
+
 use chrono::{DateTime, FixedOffset};
 
 pub type Dt = DateTime<FixedOffset>;
@@ -126,11 +128,14 @@ impl HomeSnapshot {
     }
 }
 
+/// What one frame shows. The snapshots are shared (`Arc`): building the state for a frame, and
+/// keeping the previous one for the scene's cross-fade, copies no forecast data. Edit one in place
+/// with `Arc::make_mut`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AppState {
     pub now: Dt,
-    pub weather: Option<WeatherSnapshot>,
-    pub home: Option<HomeSnapshot>,
+    pub weather: Option<Arc<WeatherSnapshot>>,
+    pub home: Option<Arc<HomeSnapshot>>,
 }
 
 impl AppState {

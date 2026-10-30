@@ -17,7 +17,7 @@ use serde_json::{json, Value};
 use super::{iso, parse_iso, write_atomic};
 use crate::config::{LocationConfig, WeatherConfig};
 use crate::state::*;
-use crate::util::{join_within, Signal};
+use crate::util::{join_within, lock, run_guarded, Signal};
 
 pub const API_URL: &str = "https://api.open-meteo.com/v1/forecast";
 pub const USER_AGENT: &str = "matrix-display/0.2 (home LED matrix; +https://open-meteo.com)";
@@ -44,14 +44,24 @@ pub fn build_url(location: &LocationConfig) -> String {
         ("daily", "temperature_2m_max,temperature_2m_min,sunrise,sunset".into()),
         ("temperature_unit", location.units.clone()),
         ("timezone", "auto".into()),
+        // Absolute times: hours on the far side of a DST change are still placed correctly.
+        ("timeformat", "unixtime".into()),
         ("forecast_days", "2".into()),
     ];
     let q: Vec<String> = query.iter().map(|(k, v)| format!("{k}={v}")).collect();
     format!("{API_URL}?{}", q.join("&"))
 }
 
+pub fn new_agent() -> ureq::Agent {
+    ureq::AgentBuilder::new().timeout(Duration::from_secs(TIMEOUT_SECONDS)).build()
+}
+
 pub fn fetch_json(url: &str) -> Result<Value, WeatherError> {
-    let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(TIMEOUT_SECONDS)).build();
+    fetch_json_with(&new_agent(), url)
+}
+
+/// GET `url` with an existing agent (the fetcher keeps one for its lifetime).
+pub fn fetch_json_with(agent: &ureq::Agent, url: &str) -> Result<Value, WeatherError> {
     let resp = agent
         .get(url)
         .set("User-Agent", USER_AGENT)
@@ -68,6 +78,27 @@ fn local(text: &str, tz: FixedOffset) -> Result<Dt, WeatherError> {
     tz.from_local_datetime(&naive)
         .single()
         .ok_or_else(|| WeatherError(format!("bad time {text:?}")))
+}
+
+/// A time from the response: Unix seconds (`timeformat=unixtime`, what we ask for) or, for older
+/// recordings, a local wall-clock string.
+fn time_value(v: &Value, tz: FixedOffset, what: &str) -> Result<Dt, WeatherError> {
+    match v {
+        Value::Number(n) => {
+            let secs = n.as_i64().or_else(|| n.as_f64().map(|f| f as i64)).ok_or_else(|| bad(what))?;
+            DateTime::from_timestamp(secs, 0).map(|t| t.with_timezone(&tz)).ok_or_else(|| bad(what))
+        }
+        Value::String(text) => local(text, tz),
+        _ => Err(bad(what)),
+    }
+}
+
+/// The local calendar date of a daily entry's `time` (`"2026-10-24"`, or local midnight in Unix seconds).
+fn day_of(v: &Value, tz: FixedOffset) -> Option<chrono::NaiveDate> {
+    match v {
+        Value::String(text) => chrono::NaiveDate::parse_from_str(text, "%Y-%m-%d").ok(),
+        other => time_value(other, tz, "daily time").ok().map(|t| t.date_naive()),
+    }
 }
 
 fn bad(what: &str) -> WeatherError {
@@ -127,25 +158,38 @@ pub fn parse_open_meteo(data: &Value, fetched_at: Option<Dt>) -> Result<WeatherS
             continue;
         }
         points.push(HourlyPoint {
-            time: local(t.as_str().ok_or_else(|| bad("hourly time"))?, tz)?,
+            time: time_value(t, tz, "hourly time")?,
             code: int(code, "hourly weather_code")?,
             temperature: num(temp, "hourly temperature_2m")?,
             precipitation_probability: if prob.is_null() { 0 } else { int(prob, "precipitation_probability")? },
         });
     }
+    let fetched_at = fetched_at.unwrap_or_else(|| Utc::now().with_timezone(&tz));
     let daily = field(data, "daily")?;
-    // Day 0 is "today" in the location's timezone.
-    let first = |key: &str| -> Result<&Value, WeatherError> {
-        list(daily, key)?.first().ok_or_else(|| bad(&format!("{key:?} is empty")))
+    // Today's entry, by the location's local date (the response's own "current" time, else the
+    // fetch time). Open-Meteo starts with today, so this is normally entry 0.
+    let today_date = match cur.get("time") {
+        Some(t) => time_value(t, tz, "current time")?,
+        None => fetched_at.with_timezone(&tz),
+    }
+    .date_naive();
+    let index = daily
+        .get("time")
+        .and_then(Value::as_array)
+        .and_then(|days| days.iter().position(|d| day_of(d, tz) == Some(today_date)))
+        .unwrap_or(0);
+    let pick = |key: &str| -> Result<&Value, WeatherError> {
+        let values = list(daily, key)?;
+        values.get(index).or(values.first()).ok_or_else(|| bad(&format!("{key:?} is empty")))
     };
     let today = DailyWeather {
-        low: num(first("temperature_2m_min")?, "temperature_2m_min")?,
-        high: num(first("temperature_2m_max")?, "temperature_2m_max")?,
-        sunrise: local(first("sunrise")?.as_str().ok_or_else(|| bad("sunrise"))?, tz)?,
-        sunset: local(first("sunset")?.as_str().ok_or_else(|| bad("sunset"))?, tz)?,
+        low: num(pick("temperature_2m_min")?, "temperature_2m_min")?,
+        high: num(pick("temperature_2m_max")?, "temperature_2m_max")?,
+        sunrise: time_value(pick("sunrise")?, tz, "sunrise")?,
+        sunset: time_value(pick("sunset")?, tz, "sunset")?,
     };
     Ok(WeatherSnapshot {
-        fetched_at: fetched_at.unwrap_or_else(|| Utc::now().with_timezone(&tz)),
+        fetched_at,
         current,
         hourly: points,
         daily: today,
@@ -215,7 +259,7 @@ pub fn snapshot_from_json(data: &Value) -> Result<WeatherSnapshot, WeatherError>
 
 pub type FetchJson = dyn Fn(&str) -> Result<Value, WeatherError> + Send + Sync;
 
-pub fn fetch_weather(location: &LocationConfig, fetcher: &FetchJson) -> Result<WeatherSnapshot, WeatherError> {
+pub fn fetch_weather(location: &LocationConfig, fetcher: &dyn Fn(&str) -> Result<Value, WeatherError>) -> Result<WeatherSnapshot, WeatherError> {
     let data = fetcher(&build_url(location))?; // network, HTTP, JSON: all mean "keep the old data"
     parse_open_meteo(&data, None)
 }
@@ -228,7 +272,7 @@ pub fn backoff_seconds(failures: u32) -> f64 {
 type Fetch = dyn Fn(&LocationConfig) -> Result<WeatherSnapshot, WeatherError> + Send + Sync;
 
 struct Shared {
-    latest: Option<WeatherSnapshot>,
+    latest: Option<Arc<WeatherSnapshot>>,
     failures: u32,
 }
 
@@ -249,7 +293,9 @@ pub struct WeatherFetcher {
 
 impl WeatherFetcher {
     pub fn new(location: LocationConfig, config: WeatherConfig, cache_path: Option<PathBuf>) -> Self {
-        let fetch: Box<Fetch> = Box::new(|loc| fetch_weather(loc, &|url| fetch_json(url)));
+        // One agent for the fetcher's lifetime: it keeps the connection pool and TLS setup.
+        let agent = new_agent();
+        let fetch: Box<Fetch> = Box::new(move |loc| fetch_weather(loc, &|url| fetch_json_with(&agent, url)));
         Self::with_fetch(location, config, cache_path, fetch)
     }
 
@@ -267,12 +313,12 @@ impl WeatherFetcher {
         WeatherFetcher { inner: Arc::new(inner), thread: Mutex::new(None) }
     }
 
-    pub fn latest(&self) -> Option<WeatherSnapshot> {
-        self.inner.shared.lock().unwrap().latest.clone()
+    pub fn latest(&self) -> Option<Arc<WeatherSnapshot>> {
+        lock(&self.inner.shared).latest.clone()
     }
 
     pub fn failures(&self) -> u32 {
-        self.inner.shared.lock().unwrap().failures
+        lock(&self.inner.shared).failures
     }
 
     /// Fetch now. True on success; on failure the last good snapshot is kept.
@@ -285,7 +331,7 @@ impl WeatherFetcher {
     }
 
     pub fn start(&self) {
-        let mut slot = self.thread.lock().unwrap();
+        let mut slot = lock(&self.thread);
         if slot.as_ref().is_some_and(|t| !t.is_finished()) {
             return;
         }
@@ -296,7 +342,10 @@ impl WeatherFetcher {
                 .name("weather".into())
                 .spawn(move || {
                     while !inner.stop.is_set() {
-                        inner.refresh_once();
+                        // A bug in parsing must not end the feed for good: count it as a failure.
+                        if run_guarded("weather refresh", || inner.refresh_once()).is_none() {
+                            inner.note_failure();
+                        }
                         inner.stop.wait(Duration::from_secs_f64(inner.next_delay()));
                     }
                 })
@@ -304,40 +353,51 @@ impl WeatherFetcher {
         );
     }
 
-    pub fn stop(&self) {
+    /// Ask the thread to end without waiting for it (it finishes its current request first).
+    pub fn request_stop(&self) {
         self.inner.stop.set();
-        if let Some(t) = self.thread.lock().unwrap().take() {
+    }
+
+    pub fn stop(&self) {
+        self.request_stop();
+        if let Some(t) = lock(&self.thread).take() {
             join_within(t, Duration::from_secs(5));
         }
     }
 }
 
 impl Inner {
+    fn note_failure(&self) -> u32 {
+        let mut s = lock(&self.shared);
+        s.failures += 1;
+        s.failures
+    }
+
     fn refresh_once(&self) -> bool {
         match (self.fetch)(&self.location) {
             Err(e) => {
-                let failures = {
-                    let mut s = self.shared.lock().unwrap();
-                    s.failures += 1;
-                    s.failures
-                };
+                let failures = self.note_failure();
                 log::warn!("weather refresh failed ({failures} in a row): {e}");
                 false
             }
             Ok(snapshot) => {
+                let snapshot = Arc::new(snapshot);
                 {
-                    let mut s = self.shared.lock().unwrap();
-                    s.latest = Some(snapshot.clone());
+                    let mut s = lock(&self.shared);
+                    s.latest = Some(Arc::clone(&snapshot));
                     s.failures = 0;
                 }
-                self.save_cache(&snapshot);
+                // A fetch finishing after a reload asked it to stop must not overwrite the new feed's cache.
+                if !self.stop.is_set() {
+                    self.save_cache(&snapshot);
+                }
                 true
             }
         }
     }
 
     fn next_delay(&self) -> f64 {
-        let failures = self.shared.lock().unwrap().failures;
+        let failures = lock(&self.shared).failures;
         if failures == 0 {
             self.refresh as f64
         } else {
@@ -354,7 +414,7 @@ impl Inner {
             .and_then(|t| serde_json::from_str::<Value>(&t).map_err(|e| e.to_string()))
             .and_then(|v| snapshot_from_json(&v).map_err(|e| e.to_string()));
         match loaded {
-            Ok(s) => self.shared.lock().unwrap().latest = Some(s),
+            Ok(s) => lock(&self.shared).latest = Some(Arc::new(s)),
             Err(e) => log::warn!("ignoring unreadable weather cache {}: {e}", path.display()),
         }
     }
@@ -364,7 +424,7 @@ impl Inner {
             return;
         };
         let text = snapshot_to_json(snapshot).to_string();
-        if let Err(e) = write_atomic(path, &text, ".tmp") {
+        if let Err(e) = write_atomic(path, &text) {
             log::warn!("could not write weather cache: {e}");
         }
     }
@@ -396,6 +456,7 @@ mod tests {
         assert!(url.contains("latitude=40.748") && url.contains("longitude=-73.994"));
         assert!(url.contains("temperature_unit=fahrenheit") && url.contains("timezone=auto"));
         assert!(url.contains("forecast_days=2") && url.contains("is_day"));
+        assert!(url.contains("timeformat=unixtime"));
         let mut c = LocationConfig::new(1.0, 2.0);
         c.units = "celsius".into();
         assert!(build_url(&c).contains("celsius"));
@@ -438,6 +499,83 @@ mod tests {
         let mut d = data();
         d["hourly"]["weather_code"][3] = Value::Null;
         assert_eq!(parse_open_meteo(&d, None).unwrap().hourly.len(), 47);
+    }
+
+    /// The recorded response as `timeformat=unixtime` would have returned it.
+    fn unixtime(d: &Value) -> Value {
+        let mut d = d.clone();
+        let tz = FixedOffset::east_opt(d["utc_offset_seconds"].as_i64().unwrap() as i32).unwrap();
+        let unix = |v: &Value| json!(local(v.as_str().unwrap(), tz).unwrap().timestamp());
+        let day = |v: &Value| {
+            let date = chrono::NaiveDate::parse_from_str(v.as_str().unwrap(), "%Y-%m-%d").unwrap();
+            json!(tz.from_local_datetime(&date.and_hms_opt(0, 0, 0).unwrap()).unwrap().timestamp())
+        };
+        d["current"]["time"] = unix(&d["current"]["time"]);
+        for (section, key, f) in [("hourly", "time", &unix as &dyn Fn(&Value) -> Value), ("daily", "sunrise", &unix),
+                                  ("daily", "sunset", &unix), ("daily", "time", &day)] {
+            let converted: Vec<Value> = d[section][key].as_array().unwrap().iter().map(f).collect();
+            d[section][key] = json!(converted);
+        }
+        d
+    }
+
+    #[test]
+    fn unixtime_response_gives_the_same_snapshot() {
+        let at = Some(Utc::now().fixed_offset());
+        let iso = parse_open_meteo(&data(), at).unwrap();
+        let unix = parse_open_meteo(&unixtime(&data()), at).unwrap();
+        assert_eq!(unix, iso);
+        assert_eq!(unix.hourly[0].time.offset().local_minus_utc(), -4 * 3600);
+    }
+
+    #[test]
+    fn daily_entry_follows_the_local_date() {
+        for d in [data(), unixtime(&data())] {
+            let today = parse_open_meteo(&d, None).unwrap();
+            assert_eq!(today.daily.high, 61.2); // the recording's first day
+            let mut next = d.clone();
+            // the same response read just after midnight: the second day applies
+            next["current"]["time"] = if next["current"]["time"].is_string() {
+                json!("2026-10-25T00:15")
+            } else {
+                json!(next["current"]["time"].as_i64().unwrap() + 21 * 3600)
+            };
+            let tomorrow = parse_open_meteo(&next, None).unwrap();
+            assert_eq!((tomorrow.daily.low, tomorrow.daily.high), (38.1, 64.0));
+            assert_eq!(tomorrow.daily.sunrise.date_naive().to_string(), "2026-10-25");
+            // a date that is not in the response falls back to the first day
+            let mut odd = d.clone();
+            odd["daily"]["time"] = json!(["2020-01-01", "2020-01-02"]);
+            assert_eq!(parse_open_meteo(&odd, None).unwrap().daily.high, 61.2);
+        }
+    }
+
+    #[test]
+    fn a_panicking_fetch_does_not_end_the_thread() {
+        let good = parse_open_meteo(&data(), None).unwrap();
+        let g = good.clone();
+        let calls = std::sync::atomic::AtomicU32::new(0);
+        let f = WeatherFetcher::with_fetch(
+            loc(), WeatherConfig { refresh_seconds: 3600 }, None,
+            Box::new(move |_| {
+                if calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+                    panic!("bug in a fetch");
+                }
+                Ok(g.clone())
+            }),
+        );
+        assert_eq!(f.next_delay(), 3600.0);
+        f.start();
+        // the panic counts as a failure: the retry comes after the first back-off step (15 s),
+        // so check the state rather than wait for it
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while f.failures() == 0 && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!((f.failures(), f.next_delay()), (1, 15.0));
+        assert!(f.refresh_once()); // the fetcher still works
+        assert_eq!(f.latest().as_deref(), Some(&good));
+        f.stop();
     }
 
     #[test]
@@ -484,10 +622,10 @@ mod tests {
         );
         assert!(f.latest().is_none());
         assert!(f.refresh_once());
-        assert_eq!(f.latest().as_ref(), Some(&good));
+        assert_eq!(f.latest().as_deref(), Some(&good));
         assert_eq!(f.next_delay(), 900.0);
         assert!(!f.refresh_once());
-        assert_eq!(f.latest().as_ref(), Some(&good));
+        assert_eq!(f.latest().as_deref(), Some(&good));
         assert_eq!((f.failures(), f.next_delay()), (1, 15.0));
         assert!(!f.refresh_once());
         assert_eq!(f.next_delay(), 30.0);
@@ -495,7 +633,7 @@ mod tests {
         // a restart while offline loads the cached snapshot
         let restarted = WeatherFetcher::with_fetch(
             loc(), WeatherConfig::default(), Some(cache), scripted(vec![offline()]));
-        assert_eq!(restarted.latest().as_ref(), Some(&good));
+        assert_eq!(restarted.latest().as_deref(), Some(&good));
     }
 
     #[test]
@@ -521,7 +659,7 @@ mod tests {
         while f.latest().is_none() && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(10));
         }
-        assert_eq!(f.latest().as_ref(), Some(&good));
+        assert_eq!(f.latest().as_deref(), Some(&good));
         f.stop();
     }
 }

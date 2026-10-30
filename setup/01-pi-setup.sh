@@ -95,8 +95,13 @@ step_purge() {
   printf '%s ' "${removed[@]}" | fold -s -w 100 | sed 's/^/    /'; echo
 
   run env DEBIAN_FRONTEND=noninteractive apt-get -y purge --auto-remove "${present[@]}"
-  local rc; rc=$(dpkg -l | awk '/^rc/{print $2}' | tr '\n' ' ')
-  if [[ -n $rc ]]; then run dpkg --purge $rc; fi
+  # Configuration left behind by the packages this run removed (never older leftovers, never protected ones).
+  local leftovers=()
+  for p in "${removed[@]}"; do
+    [[ $p =~ $PROTECT_RE ]] && continue
+    if [[ $(dpkg-query -W -f='${db:Status-Abbrev}' "$p" 2>/dev/null) == rc* ]]; then leftovers+=("$p"); fi
+  done
+  if (( ${#leftovers[@]} )); then run dpkg --purge "${leftovers[@]}"; fi
 }
 
 step_boot() {

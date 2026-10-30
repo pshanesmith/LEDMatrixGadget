@@ -1,7 +1,8 @@
 //! Small helpers shared by the data feeds and the run loop.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Condvar, Mutex};
+use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::{Condvar, Mutex, MutexGuard};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -53,6 +54,28 @@ pub fn join_within(handle: JoinHandle<()>, timeout: Duration) {
     }
     if handle.is_finished() {
         let _ = handle.join();
+    }
+}
+
+/// Lock a mutex even if a thread panicked while holding it: the data feeds only keep plain values
+/// behind their locks, and a panic is already logged where it happened.
+pub fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Run one step of a background loop, turning a panic into a logged `None` so the thread lives on.
+pub fn run_guarded<T>(what: &str, step: impl FnOnce() -> T) -> Option<T> {
+    match catch_unwind(AssertUnwindSafe(step)) {
+        Ok(v) => Some(v),
+        Err(payload) => {
+            let msg = payload
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| payload.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "unknown panic".into());
+            log::error!("{what} panicked: {msg}; retrying after a back-off");
+            None
+        }
     }
 }
 
@@ -175,6 +198,19 @@ mod tests {
         assert!(fnmatch("", "*"));
         assert!(fnmatch("a[", "a["));
         assert!(fnmatch("abcabc", "*abc"));
+    }
+
+    #[test]
+    fn guarded_steps_survive_panics_and_poisoned_locks() {
+        let m = Mutex::new(1);
+        assert_eq!(run_guarded("test", || {
+            let _g = m.lock().unwrap();
+            panic!("boom")
+        }), None::<()>);
+        assert!(m.is_poisoned());
+        *lock(&m) += 1;
+        assert_eq!(*lock(&m), 2);
+        assert_eq!(run_guarded("test", || 5), Some(5));
     }
 
     #[test]

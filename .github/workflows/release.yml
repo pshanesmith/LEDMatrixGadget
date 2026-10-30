@@ -13,7 +13,7 @@ jobs:
   release:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: The tag must match the crate version
         run: |
@@ -26,8 +26,9 @@ jobs:
       - name: Tests
         run: cargo test --locked
 
+      # Pinned so a release builds the same way each time (the pair is the one CI checks the hardware build with).
       - name: Zig and cargo-zigbuild
-        run: pip install ziglang && cargo install --locked cargo-zigbuild
+        run: pip install ziglang==0.17.0 && cargo install --locked cargo-zigbuild --version 0.24.0
 
       - name: Cross-build for the Pi
         run: ./tools/cross-build.sh

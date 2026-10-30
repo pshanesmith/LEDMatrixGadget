@@ -26,6 +26,13 @@ impl Img {
         Img::new(w, h, [0, 0, 0])
     }
 
+    /// Become a copy of `src`, reusing this image's buffer.
+    pub fn copy_from(&mut self, src: &Img) {
+        self.w = src.w;
+        self.h = src.h;
+        self.data.clone_from(&src.data);
+    }
+
     fn inside(&self, x: i32, y: i32) -> bool {
         x >= 0 && y >= 0 && (x as usize) < self.w && (y as usize) < self.h
     }
@@ -72,9 +79,7 @@ impl Img {
     }
 
     pub fn line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, c: Rgb) {
-        for (x, y) in line_points(x0, y0, x1, y1) {
-            self.put(x, y, c);
-        }
+        for_line_points(x0, y0, x1, y1, |x, y| self.put(x, y, c));
     }
 
     /// Connected segments through `pts`.
@@ -85,8 +90,19 @@ impl Img {
     }
 
     pub fn fill_ellipse(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, c: Rgb) {
-        for (x, y) in ellipse_points(x0, y0, x1, y1) {
-            self.put(x, y, c);
+        for_ellipse_points(x0, y0, x1, y1, |x, y| self.put(x, y, c));
+    }
+
+    /// Copy the top-left `w` x `h` pixels of `src` (clipped to it) onto this image at (x, y): `paste`
+    /// of a crop, without making the crop.
+    pub fn paste_part(&mut self, src: &Img, w: usize, h: usize, x: i32, y: i32) {
+        for sy in 0..h.min(src.h) {
+            for sx in 0..w.min(src.w) {
+                let (dx, dy) = (x + sx as i32, y + sy as i32);
+                if self.inside(dx, dy) {
+                    self.data[dy as usize * self.w + dx as usize] = src.data[sy * src.w + sx];
+                }
+            }
         }
     }
 
@@ -124,20 +140,19 @@ impl Img {
 
     /// Pillow's `Image.blend(a, b, alpha)`.
     pub fn blend(a: &Img, b: &Img, alpha: f64) -> Img {
+        let mut out = b.clone();
+        out.blend_from(a, alpha);
+        out
+    }
+
+    /// In place, this image becomes `Img::blend(a, self, alpha)`.
+    pub fn blend_from(&mut self, a: &Img, alpha: f64) {
         let alpha = alpha as f32;
-        let data = a
-            .data
-            .iter()
-            .zip(&b.data)
-            .map(|(p, q)| {
-                let mut out = [0u8; 3];
-                for k in 0..3 {
-                    out[k] = (p[k] as i32 as f32 + alpha * (q[k] as i32 - p[k] as i32) as f32) as u8;
-                }
-                out
-            })
-            .collect();
-        Img { w: a.w, h: a.h, data }
+        for (q, p) in self.data.iter_mut().zip(&a.data) {
+            for k in 0..3 {
+                q[k] = (p[k] as i32 as f32 + alpha * (q[k] as i32 - p[k] as i32) as f32) as u8;
+            }
+        }
     }
 }
 
@@ -189,9 +204,7 @@ impl Mask {
     }
 
     pub fn fill_ellipse(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, v: u8) {
-        for (x, y) in ellipse_points(x0, y0, x1, y1) {
-            self.set(x, y, v);
-        }
+        for_ellipse_points(x0, y0, x1, y1, |x, y| self.set(x, y, v));
     }
 
     /// Pillow's `Image.point(f)` for an 8-bit mask.
@@ -236,11 +249,17 @@ impl Mask {
 /// Pixels on the line from (x0, y0) to (x1, y1), both ends included (Bresenham).
 pub fn line_points(x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<(i32, i32)> {
     let mut pts = Vec::new();
+    for_line_points(x0, y0, x1, y1, |x, y| pts.push((x, y)));
+    pts
+}
+
+/// Call `f` for each pixel of `line_points`, in the same order, without collecting them.
+pub fn for_line_points(x0: i32, y0: i32, x1: i32, y1: i32, mut f: impl FnMut(i32, i32)) {
     let (dx, dy) = ((x1 - x0).abs(), -(y1 - y0).abs());
     let (sx, sy) = (if x0 < x1 { 1 } else { -1 }, if y0 < y1 { 1 } else { -1 });
     let (mut x, mut y, mut err) = (x0, y0, dx + dy);
     loop {
-        pts.push((x, y));
+        f(x, y);
         if x == x1 && y == y1 {
             break;
         }
@@ -254,7 +273,6 @@ pub fn line_points(x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<(i32, i32)> {
             y += sy;
         }
     }
-    pts
 }
 
 /// Pixels of the filled ellipse inscribed in the box with inclusive corners.
@@ -264,19 +282,45 @@ pub fn line_points(x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<(i32, i32)> {
 /// step taking the neighbour (up, diagonal, left; the first wins a tie) closest to the ellipse,
 /// and fill every row out to the furthest point reached on it.
 pub fn ellipse_points(x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<(i32, i32)> {
+    let mut pts = Vec::new();
+    for_ellipse_points(x0, y0, x1, y1, |x, y| pts.push((x, y)));
+    pts
+}
+
+/// Call `f` for each pixel of `ellipse_points`, in the same order, without collecting them.
+pub fn for_ellipse_points(x0: i32, y0: i32, x1: i32, y1: i32, mut f: impl FnMut(i32, i32)) {
     let (a, b) = ((x1 - x0) as i64, (y1 - y0) as i64);
     if a < 0 || b < 0 || (a == 0 && b == 0) {
-        return Vec::new();
+        return;
     }
     let (a2, b2) = (a * a, b * b);
     let a2b2 = a2 * b2;
     let err = |x: i64, y: i64| (b2 * x * x + a2 * y * y - a2b2).abs();
     let (ex, ey) = (a % 2, b);
     let (mut x, mut y) = (a, b % 2);
-    let mut rows: Vec<(i64, i64)> = Vec::new(); // (y, widest x) for each row, from the middle out
+    // (y, widest x) for each row, from the middle out. A row is complete once the walk moves on to
+    // the next one, so each is filled then (in the same order as collecting them first would).
+    let fill_row = |f: &mut dyn FnMut(i32, i32), y: i64, xm: i64| {
+        let signs: &[i64] = if y == 0 { &[1] } else { &[1, -1] };
+        for sgn in signs {
+            let py = y0 as i64 + (sgn * y + b) / 2;
+            let mut u = -xm;
+            while u <= xm {
+                f(x0 + ((u + a) / 2) as i32, py as i32);
+                u += 2;
+            }
+        }
+    };
+    let mut row: Option<(i64, i64)> = None;
     loop {
-        if rows.last().is_none_or(|r| r.0 != y) {
-            rows.push((y, x));
+        match row {
+            Some(r) if r.0 == y => {}
+            _ => {
+                if let Some((ry, rx)) = row {
+                    fill_row(&mut f, ry, rx);
+                }
+                row = Some((y, x));
+            }
         }
         if x == ex && y == ey {
             break;
@@ -296,19 +340,9 @@ pub fn ellipse_points(x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<(i32, i32)> {
             None => break,
         }
     }
-    let mut pts = Vec::new();
-    for (y, xm) in rows {
-        let signs: &[i64] = if y == 0 { &[1] } else { &[1, -1] };
-        for sgn in signs {
-            let py = y0 as i64 + (sgn * y + b) / 2;
-            let mut u = -xm;
-            while u <= xm {
-                pts.push((x0 + ((u + a) / 2) as i32, py as i32));
-                u += 2;
-            }
-        }
+    if let Some((ry, rx)) = row {
+        fill_row(&mut f, ry, rx);
     }
-    pts
 }
 
 #[cfg(test)]

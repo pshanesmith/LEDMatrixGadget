@@ -34,7 +34,7 @@ The panel is refreshed by software timing, so flicker is a trade between colour 
 Set each value with the helper (safe to repeat, and it repairs duplicate `[display]` sections): `sudo /opt/matrix/bin/matrix-set-config /etc/matrix/config.toml display pwm_bits 10`, then restart. Already ruled out: interrupts are kept off the reserved core, and `isolcpus` is active.
 
 ## What the panel shows
-Date; a scene with the current condition (sun/moon, clouds, rain, snow, fog, thunder, day/night) and the temperature; today's low and high; the next change in conditions within 24 h (or `STEADY 24H`); then lock, light and gate status. Locks: number of unlocked ones (red when nonzero, an amber `?` if one is offline). Lights: room lights on (status LEDs and groups are excluded). Gate: green closed, blinking red open, amber unknown. A dot in the bottom-right corner appears when data is stale (amber: Home Assistant older than 5 minutes; red: weather older than 3 hours).
+Date; a scene with the current condition (sun/moon, clouds, rain, snow, fog, thunder, day/night) and the temperature; today's low and high; the next change in conditions within 24 h (or `STEADY 24H`, fewer hours if the forecast ends sooner, `--` if it is out of date); then lock, light and gate status. Locks: number of unlocked ones (red when nonzero, an amber `?` if one is offline). Lights: room lights on (status LEDs and groups are excluded). Gate: green closed, blinking red open, amber unknown. A dot in the bottom-right corner appears when data is stale (amber: Home Assistant older than 5 minutes; red: weather older than 3 hours).
 
 ## Troubleshooting
 | Symptom | Check |
@@ -50,7 +50,7 @@ Date; a scene with the current condition (sun/moon, clouds, rain, snow, fog, thu
 The Pi has about 460 MB of RAM. The display itself needs about 35 MB. Claude Code and other large programs can exhaust memory; the symptoms were SSH dropping, the Wi-Fi chip logging `brcmfmac ... failed`, and the hardware watchdog resetting the board after about a minute. Keep big jobs and extra sessions off the Pi while the display runs, or develop from another machine.
 
 ## Updating
-`sudo apt update && sudo apt full-upgrade`, then reboot. After a kernel update confirm `isolcpus` and the sound blacklist still apply (`./setup/02-matrix-setup.sh --only verify`). No unattended upgrades are installed by design.
+The system updates itself every night (see Automatic updates below). To update by hand: `sudo apt update && sudo apt full-upgrade`, then reboot. After a kernel update confirm `isolcpus` and the sound blacklist still apply (`./setup/02-matrix-setup.sh --only verify`; `tools/health-check.sh` checks both after every boot). The display program itself is updated with the installer (the `curl ... | sudo bash` command above).
 
 ## Automatic updates
 The Pi upgrades itself nightly (`unattended-upgrades`): Debian security and stable updates plus the Raspberry Pi repository, run at about 03:00. If a kernel or firmware update needs a reboot it happens at **04:00 and only when nobody is logged in**, so an open SSH session postpones it a night; the display is dark for about a minute. Application code is not updated this way: run the installer again (the `curl ... | sudo bash` command above).

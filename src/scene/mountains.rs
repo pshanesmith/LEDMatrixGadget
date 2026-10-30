@@ -10,7 +10,7 @@ use std::rc::Rc;
 
 use super::cache::Memo;
 use super::palette::*;
-use crate::gfx::{line_points, pyround, Img, Mask, Rgb};
+use crate::gfx::{for_line_points, pyround, Img, Mask, Rgb};
 use rand::Rng;
 use crate::state::Condition;
 
@@ -295,9 +295,7 @@ impl Layer {
     }
 
     fn line(&mut self, a: (i32, i32), b: (i32, i32), c: Rgb) {
-        for (x, y) in line_points(a.0, a.1, b.0, b.1) {
-            self.set(x, y, c);
-        }
+        for_line_points(a.0, a.1, b.0, b.1, |x, y| self.set(x, y, c));
     }
 
     fn rect(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, c: Rgb) {

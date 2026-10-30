@@ -5,9 +5,21 @@ use std::fmt;
 use std::fs;
 use std::path::Path;
 
+use crate::layout;
+
 pub const DEFAULT_HA_URL: &str = "http://homeassistant:8123";
 pub const CONFIG_SEARCH: [&str; 2] = ["config/config.toml", "/etc/matrix/config.toml"];
+/// Where `secrets.env` is looked for. The relative path is only for development (a checkout); see
+/// `secrets_search`.
 pub const SECRETS_SEARCH: [&str; 2] = ["secrets.env", "/etc/matrix/secrets.env"];
+/// The system secrets file, the only one the service reads.
+pub const SYSTEM_SECRETS: &str = "/etc/matrix/secrets.env";
+
+/// Allowed ranges, checked by `build_config`.
+pub const MIN_REFRESH_SECONDS: u64 = 60;
+pub const MIN_POLL_SECONDS: u64 = 5;
+pub const SCENE_FPS_RANGE: std::ops::RangeInclusive<u32> = 1..=30;
+pub const PWM_BITS_RANGE: std::ops::RangeInclusive<u8> = 1..=11;
 
 pub type Env = HashMap<String, String>;
 
@@ -343,6 +355,27 @@ pub fn build_config(data: &toml::Table, environ: &Env, secrets: &Env) -> Result<
     if !(1..=100).contains(&brightness) || !(1..=100).contains(&max_brightness) {
         return err("brightness values must be 1-100");
     }
+    if !SCENE_FPS_RANGE.contains(&d.scene_fps) {
+        return err(format!(
+            "[display] scene_fps must be {}-{} (got {})",
+            SCENE_FPS_RANGE.start(), SCENE_FPS_RANGE.end(), d.scene_fps
+        ));
+    }
+    if !PWM_BITS_RANGE.contains(&d.pwm_bits) {
+        return err(format!(
+            "[display] pwm_bits must be {}-{} (got {})",
+            PWM_BITS_RANGE.start(), PWM_BITS_RANGE.end(), d.pwm_bits
+        ));
+    }
+    // The layout is drawn for exactly one 64x64 picture.
+    let (width, height) = (d.cols as u64 * d.chain_length as u64, d.rows as u64 * d.parallel as u64);
+    if (width, height) != (layout::WIDTH as u64, layout::HEIGHT as u64) {
+        return err(format!(
+            "[display] cols x chain_length must be {} and rows x parallel must be {} (the screen layout is {}x{}); \
+             got {width}x{height}",
+            layout::WIDTH, layout::HEIGHT, layout::WIDTH, layout::HEIGHT
+        ));
+    }
     d.brightness = brightness.min(max_brightness) as u8;
     d.max_brightness = max_brightness as u8;
     if let Some(v) = pick("MATRIX_DROP_PRIVILEGES") {
@@ -375,6 +408,12 @@ pub fn build_config(data: &toml::Table, environ: &Env, secrets: &Env) -> Result<
 
     let s = Section::new("weather", data.get("weather"), &empty, &WEATHER_KEYS)?;
     let weather = WeatherConfig { refresh_seconds: s.uint("refresh_seconds", 900)? };
+    if weather.refresh_seconds < MIN_REFRESH_SECONDS {
+        return err(format!(
+            "[weather] refresh_seconds must be at least {MIN_REFRESH_SECONDS} (got {})",
+            weather.refresh_seconds
+        ));
+    }
 
     let s = Section::new("homeassistant", data.get("homeassistant"), &empty, &HA_KEYS)?;
     let url_in = pick("MATRIX_HA_URL").map(Ok).unwrap_or_else(|| s.string("url", DEFAULT_HA_URL))?;
@@ -389,8 +428,42 @@ pub fn build_config(data: &toml::Table, environ: &Env, secrets: &Env) -> Result<
         power_tier_entity: s.string("power_tier_entity", "")?,
         exclude_updates: s.strings("exclude_updates")?,
     };
+    if homeassistant.poll_seconds < MIN_POLL_SECONDS {
+        return err(format!(
+            "[homeassistant] poll_seconds must be at least {MIN_POLL_SECONDS} (got {})",
+            homeassistant.poll_seconds
+        ));
+    }
 
     Ok(Config { display: d, location, weather, homeassistant })
+}
+
+/// The secrets files to try, in order. Under the service (`MATRIX_STATE_DIR` set, as the unit does) only
+/// `/etc/matrix/secrets.env`: the working directory may be writable by the unprivileged user the
+/// process drops to, and a `secrets.env` planted there could redirect the token (`MATRIX_HA_URL`) on
+/// the next reload. In development the checkout's `secrets.env` is tried first.
+pub fn secrets_search(environ: &Env) -> Vec<&'static str> {
+    if environ.get("MATRIX_STATE_DIR").is_some_and(|v| !v.is_empty()) {
+        vec![SYSTEM_SECRETS]
+    } else {
+        SECRETS_SEARCH.to_vec()
+    }
+}
+
+/// A secrets file anyone but its owner can write is not trusted.
+#[cfg(unix)]
+pub fn check_secrets_file(path: &Path) -> Result<(), String> {
+    use std::os::unix::fs::MetadataExt;
+    let meta = fs::metadata(path).map_err(|e| e.to_string())?;
+    if meta.mode() & 0o022 != 0 {
+        return Err(format!("it is writable by group or others (mode {:o}); run chmod 600 on it", meta.mode() & 0o777));
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+pub fn check_secrets_file(_path: &Path) -> Result<(), String> {
+    Ok(())
 }
 
 /// Load config.toml (explicit path, else the first existing search path) and secrets.env.
@@ -418,7 +491,11 @@ pub fn load_config_with(path: Option<&str>, environ: &Env) -> Result<Config, Con
         }
     }
     let mut secrets = Env::new();
-    if let Some(found) = SECRETS_SEARCH.iter().find(|c| Path::new(c).is_file()) {
+    let search = secrets_search(environ);
+    if let Some(found) = search.iter().find(|c| Path::new(c).is_file()) {
+        if let Err(why) = check_secrets_file(Path::new(found)) {
+            return err(format!("refusing to read {found}: {why}"));
+        }
         match parse_env_file(found) {
             Ok(values) => secrets = values,
             // After the panel driver drops root, a root-only secrets.env cannot be read again;
@@ -495,6 +572,55 @@ mod tests {
         let cfg = build("[display]\nbrightness = 90\nmax_brightness = 70", &[]).unwrap();
         assert_eq!(cfg.display.brightness, 70);
         assert!(build("[display]\nbrightness = 0", &[]).is_err());
+    }
+
+    #[test]
+    fn ranges_are_checked() {
+        for (text, needle) in [
+            ("[weather]\nrefresh_seconds = 59", "refresh_seconds"),
+            ("[homeassistant]\npoll_seconds = 4", "poll_seconds"),
+            ("[display]\nscene_fps = 0", "scene_fps"),
+            ("[display]\nscene_fps = 31", "scene_fps"),
+            ("[display]\npwm_bits = 0", "pwm_bits"),
+            ("[display]\npwm_bits = 12", "pwm_bits"),
+            ("[display]\nrows = 32", "rows x parallel"),
+            ("[display]\ncols = 32\nchain_length = 1", "cols x chain_length"),
+            ("[display]\nparallel = 2", "rows x parallel"),
+        ] {
+            let e = build(text, &[]).unwrap_err();
+            assert!(e.0.contains(needle), "{text}: {e}");
+        }
+        for text in [
+            "[weather]\nrefresh_seconds = 60",
+            "[homeassistant]\npoll_seconds = 5",
+            "[display]\nscene_fps = 1",
+            "[display]\nscene_fps = 30",
+            "[display]\npwm_bits = 1",
+            "[display]\ncols = 32\nchain_length = 2",
+            "[display]\nrows = 32\nparallel = 2",
+        ] {
+            assert!(build(text, &[]).is_ok(), "{text}");
+        }
+    }
+
+    #[test]
+    fn the_service_reads_only_the_system_secrets_file() {
+        assert_eq!(secrets_search(&Env::new()), SECRETS_SEARCH.to_vec());
+        assert_eq!(secrets_search(&env(&[("MATRIX_STATE_DIR", "")])), SECRETS_SEARCH.to_vec());
+        assert_eq!(secrets_search(&env(&[("MATRIX_STATE_DIR", "/var/lib/matrix-display")])), vec![SYSTEM_SECRETS]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_secrets_file_others_can_write_is_refused() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("secrets.env");
+        fs::write(&f, "MATRIX_HA_URL=http://evil\n").unwrap();
+        for (mode, ok) in [(0o600, true), (0o644, true), (0o620, false), (0o666, false)] {
+            fs::set_permissions(&f, fs::Permissions::from_mode(mode)).unwrap();
+            assert_eq!(check_secrets_file(&f).is_ok(), ok, "mode {mode:o}");
+        }
     }
 
     #[test]

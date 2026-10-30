@@ -1,5 +1,10 @@
 //! Overlay text for the scene: the 3x5 temperature digits and the date, each with a dark outline.
 
+use std::rc::Rc;
+
+use chrono::NaiveDate;
+
+use super::cache::Recent;
 use crate::gfx::Mask;
 use crate::ui::fonts::{glyph, glyph_width, SPACING};
 
@@ -62,6 +67,29 @@ pub fn date_masks(text: &str) -> (Mask, Mask) {
     }
     let outline = outline_of(&mask);
     (mask, outline)
+}
+
+thread_local! {
+    // A few of each: during a cross-fade the old and the new state are drawn in turn.
+    static TEXT: Recent<String, (Mask, Mask)> = const { Recent::new(4) };
+    static DATE: Recent<NaiveDate, (Mask, Mask)> = const { Recent::new(4) };
+    static TEMPERATURE: Recent<i64, (Mask, Mask)> = const { Recent::new(4) };
+}
+
+/// `text_masks(&format_temperature(value))`, remembered by the rounded value.
+pub fn temperature_masks_cached(value: f64) -> Rc<(Mask, Mask)> {
+    let degrees = crate::gfx::pyround(value);
+    TEMPERATURE.with(|m| m.get_by(|d| *d == degrees, || (degrees, text_masks(&degrees.to_string()))))
+}
+
+/// `text_masks`, remembered: the temperature changes a few times an hour, not every frame.
+pub fn text_masks_cached(text: &str) -> Rc<(Mask, Mask)> {
+    TEXT.with(|m| m.get_by(|k| k == text, || (text.to_string(), text_masks(text))))
+}
+
+/// `date_masks(&make_text())`, remembered per day, so the text is only formatted when the day changes.
+pub fn date_masks_cached(day: NaiveDate, make_text: impl FnOnce() -> String) -> Rc<(Mask, Mask)> {
+    DATE.with(|m| m.get_by(|d| *d == day, || (day, date_masks(&make_text()))))
 }
 
 pub fn format_temperature(value: f64) -> String {

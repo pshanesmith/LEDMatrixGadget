@@ -8,10 +8,28 @@ jobs:
   test:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Rust toolchain
         run: rustup toolchain install stable --profile minimal --component clippy && rustup default stable
       - name: Tests
         run: cargo test --locked
       - name: Clippy
         run: cargo clippy --locked --all-targets -- -D warnings
+
+  # The panel backend (--features hardware) only builds for the Pi, so it is checked by cross-compiling
+  # for it the way the release is built (cargo-zigbuild; see CLAUDE.md). Nothing here can run it.
+  hardware:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy
+          rustup default stable
+          rustup target add aarch64-unknown-linux-musl
+      - name: Zig and cargo-zigbuild
+        run: pip install ziglang==0.17.0 && cargo install --locked cargo-zigbuild --version 0.24.0
+      - name: Clippy (hardware feature, Pi target)
+        run: cargo-zigbuild clippy --locked --features hardware --all-targets --target aarch64-unknown-linux-musl -- -D warnings
+      - name: Build the hardware tests (they cannot run here)
+        run: cargo zigbuild --locked --lib --tests --features hardware --target aarch64-unknown-linux-musl

@@ -1,6 +1,6 @@
 //! Named sample `AppState`s for previews, golden images and tests (no network needed).
 
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 
 use chrono::{DateTime, Duration, FixedOffset, TimeZone, Timelike};
 
@@ -80,7 +80,7 @@ pub fn sample_state_at(name: &str, now: Dt) -> AppState {
     let mut home = HomeSnapshot::new(now);
     home.locks_unlocked = 1;
     home.lights_on = 8;
-    AppState { now, weather: Some(weather), home: Some(home) }
+    AppState { now, weather: Some(Arc::new(weather)), home: Some(Arc::new(home)) }
 }
 
 /// Convenience for tests: a datetime in the sample time zone.

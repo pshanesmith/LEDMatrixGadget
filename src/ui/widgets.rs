@@ -102,7 +102,16 @@ pub fn draw_next_change(frame: &mut Img, rect: Rect, state: &AppState, _t: f64) 
         return;
     };
     let (cond, text, night) = match forecast::next_change(weather, state.now) {
-        None => (weather.current.condition(), "STEADY 24H".to_string(), !weather.current.is_day),
+        None => {
+            // "Steady" only for as far as the forecast reaches; nothing at all once it is all in the past.
+            let Some(horizon) = forecast::forecast_horizon(weather, state.now) else {
+                draw_text(frame, center_x(rect, text_width("--"), None), y, "--", DIM);
+                return;
+            };
+            // The two-day request ends at 23:00 tomorrow, so late evening reaches 23 h: call that a full day.
+            let hours = if horizon.num_hours() >= 23 { 24 } else { horizon.num_hours().clamp(1, 24) };
+            (weather.current.condition(), format!("STEADY {hours}H"), !weather.current.is_day)
+        }
         Some(change) => (
             change.condition,
             format!("{} {}", condition_name(change.condition), hour_label(&change.time)),
