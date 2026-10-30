@@ -5,6 +5,8 @@ use std::fmt;
 use std::fs;
 use std::path::Path;
 
+use chrono::NaiveTime;
+
 use crate::layout;
 
 pub const DEFAULT_HA_URL: &str = "http://homeassistant:8123";
@@ -175,9 +177,35 @@ impl fmt::Debug for HomeAssistantConfig {
     }
 }
 
+/// A daily window, in local clock time, during which the panel is blank. It may cross midnight.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SleepWindow {
+    pub start: NaiveTime,
+    pub end: NaiveTime,
+}
+
+impl SleepWindow {
+    /// True from `start` (inclusive) up to `end` (exclusive); with `start > end` the window wraps
+    /// past midnight. `start == end` never occurs (the config rejects it).
+    pub fn contains(&self, time: NaiveTime) -> bool {
+        if self.start < self.end {
+            self.start <= time && time < self.end
+        } else {
+            time >= self.start || time < self.end
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ScheduleConfig {
+    /// `None` (the default): never asleep.
+    pub sleep: Option<SleepWindow>,
+}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Config {
     pub display: DisplayConfig,
+    pub schedule: ScheduleConfig,
     pub location: Option<LocationConfig>,
     pub weather: WeatherConfig,
     pub homeassistant: HomeAssistantConfig,
@@ -288,6 +316,20 @@ impl<'a> Section<'a> {
         }
     }
 
+    /// An optional 24-hour `HH:MM` local time.
+    fn clock_time(&self, key: &str) -> Result<Option<NaiveTime>, ConfigError> {
+        match self.table.get(key) {
+            None => Ok(None),
+            Some(toml::Value::String(v)) => match NaiveTime::parse_from_str(v.trim(), "%H:%M") {
+                Ok(t) => Ok(Some(t)),
+                Err(_) => err(format!(
+                    "[{}] {key} must be a 24-hour time like \"06:30\" in HH:MM form (got {v:?})", self.name
+                )),
+            },
+            Some(_) => err(format!("[{}] {key} must be a string like \"06:30\" (24-hour HH:MM)", self.name)),
+        }
+    }
+
     fn boolean(&self, key: &str, default: bool) -> Result<bool, ConfigError> {
         match self.table.get(key) {
             None => Ok(default),
@@ -316,6 +358,7 @@ const DISPLAY_KEYS: [&str; 17] = [
     "pwm_lsb_nanoseconds", "limit_refresh_hz", "row_address_type", "multiplexing", "rgb_sequence",
     "brightness", "max_brightness", "scene_fps", "drop_privileges", "realtime_priority",
 ];
+const SCHEDULE_KEYS: [&str; 2] = ["sleep_start", "sleep_end"];
 const LOCATION_KEYS: [&str; 5] = ["latitude", "longitude", "postal_code", "label", "units"];
 const WEATHER_KEYS: [&str; 1] = ["refresh_seconds"];
 const HA_KEYS: [&str; 8] = [
@@ -414,6 +457,15 @@ pub fn build_config(data: &toml::Table, environ: &Env, secrets: &Env) -> Result<
         }
     };
 
+    let s = Section::new("schedule", data.get("schedule"), &empty, &SCHEDULE_KEYS)?;
+    let sleep = match (s.clock_time("sleep_start")?, s.clock_time("sleep_end")?) {
+        (None, None) => None,
+        (Some(start), Some(end)) if start != end => Some(SleepWindow { start, end }),
+        (Some(_), Some(_)) => return err("[schedule] sleep_start and sleep_end must differ (use neither to stay awake)"),
+        _ => return err("[schedule] sleep_start and sleep_end must be set together, each as HH:MM (e.g. \"00:00\" and \"06:00\")"),
+    };
+    let schedule = ScheduleConfig { sleep };
+
     let s = Section::new("weather", data.get("weather"), &empty, &WEATHER_KEYS)?;
     let weather = WeatherConfig { refresh_seconds: s.uint("refresh_seconds", 900)? };
     if weather.refresh_seconds < MIN_REFRESH_SECONDS {
@@ -443,7 +495,7 @@ pub fn build_config(data: &toml::Table, environ: &Env, secrets: &Env) -> Result<
         ));
     }
 
-    Ok(Config { display: d, location, weather, homeassistant })
+    Ok(Config { display: d, schedule, location, weather, homeassistant })
 }
 
 /// The secrets files to try, in order. Under the service (`MATRIX_STATE_DIR` set, as the unit does) only
@@ -611,6 +663,57 @@ mod tests {
         ] {
             assert!(build(text, &[]).is_ok(), "{text}");
         }
+    }
+
+    fn window(text: &str) -> Option<SleepWindow> {
+        build(text, &[]).unwrap().schedule.sleep
+    }
+
+    fn t(h: u32, m: u32) -> NaiveTime {
+        NaiveTime::from_hms_opt(h, m, 0).unwrap()
+    }
+
+    #[test]
+    fn no_sleep_window_by_default() {
+        assert_eq!(window(""), None);
+        assert_eq!(window("[schedule]"), None);
+    }
+
+    #[test]
+    fn sleep_window_parses_and_validates() {
+        let w = window("[schedule]\nsleep_start = \"00:00\"\nsleep_end = \"06:00\"").unwrap();
+        assert_eq!((w.start, w.end), (t(0, 0), t(6, 0)));
+        let w = window("[schedule]\nsleep_start = \"22:30\"\nsleep_end = \"6:05\"").unwrap();
+        assert_eq!((w.start, w.end), (t(22, 30), t(6, 5)));
+        for (text, needle) in [
+            ("[schedule]\nsleep_start = \"00:00\"", "set together"),
+            ("[schedule]\nsleep_end = \"06:00\"", "set together"),
+            ("[schedule]\nsleep_start = \"06:00\"\nsleep_end = \"06:00\"", "must differ"),
+            ("[schedule]\nsleep_start = \"24:00\"\nsleep_end = \"06:00\"", "sleep_start must be a 24-hour time"),
+            ("[schedule]\nsleep_start = \"midnight\"\nsleep_end = \"06:00\"", "HH:MM"),
+            ("[schedule]\nsleep_start = \"00:00\"\nsleep_end = \"6\"", "sleep_end must be a 24-hour time"),
+            ("[schedule]\nsleep_start = 0\nsleep_end = \"06:00\"", "sleep_start must be a string"),
+            ("[schedule]\nsleep_start = \"00:00:30\"\nsleep_end = \"06:00\"", "HH:MM"),
+            ("[schedule]\nbogus = 1", "unknown key(s) in [schedule]: bogus"),
+        ] {
+            let e = build(text, &[]).unwrap_err();
+            assert!(e.0.contains(needle), "{text}: {e}");
+        }
+    }
+
+    #[test]
+    fn sleep_window_contains_handles_midnight() {
+        let day = SleepWindow { start: t(13, 0), end: t(15, 30) };
+        assert!(day.contains(t(13, 0)) && day.contains(t(15, 29)));
+        assert!(!day.contains(t(12, 59)) && !day.contains(t(15, 30)) && !day.contains(t(0, 0)));
+        let night = SleepWindow { start: t(22, 0), end: t(6, 0) };
+        assert!(night.contains(t(22, 0)) && night.contains(t(23, 59)) && night.contains(t(0, 0)));
+        assert!(night.contains(t(5, 59)));
+        assert!(!night.contains(t(6, 0)) && !night.contains(t(12, 0)) && !night.contains(t(21, 59)));
+        let midnight_to_six = SleepWindow { start: t(0, 0), end: t(6, 0) };
+        assert!(midnight_to_six.contains(t(0, 0)) && midnight_to_six.contains(t(3, 0)));
+        assert!(midnight_to_six.contains(NaiveTime::from_hms_opt(5, 59, 59).unwrap()));
+        assert!(!midnight_to_six.contains(t(6, 0)) && !midnight_to_six.contains(t(23, 59)));
     }
 
     #[test]

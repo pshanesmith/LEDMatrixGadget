@@ -195,6 +195,15 @@ pwm_bits = 10
     }
 
     #[test]
+    fn sleep_times_are_written_as_quoted_strings() {
+        assert_eq!(format_value("00:00"), "\"00:00\"");
+        let out = update(&update("", "schedule", "sleep_start", "00:00"), "schedule", "sleep_end", "06:00");
+        let schedule = &parsed(&out)["schedule"];
+        assert_eq!(schedule["sleep_start"].as_str(), Some("00:00"));
+        assert_eq!(schedule["sleep_end"].as_str(), Some("06:00"));
+    }
+
+    #[test]
     fn writes_backup_and_refuses_invalid() {
         let dir = tempfile::tempdir().unwrap();
         let f = dir.path().join("c.toml");

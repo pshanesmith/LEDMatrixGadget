@@ -318,6 +318,7 @@ fn build_terrain(eq: i32, cond: Option<Condition>, season_k: i32) -> (Img, Mask)
     let elev = eq as f64 / 40.0;
     let (light, tw) = (light_level(elev), twilight(elev));
     let dusk = tw * (1.0 - light * 0.5);
+    let day = light * (1.0 - tw);
     let g = gray_mix(cond) * 0.7;
     let snowing = cond == Some(Condition::Snow);
     let shapes = shapes();
@@ -351,14 +352,19 @@ fn build_terrain(eq: i32, cond: Option<Condition>, season_k: i32) -> (Img, Mask)
 
     let tone = |i: usize, foliage: Option<Rgb>, fol: f64| -> Rgb {
         let k = ((BLUES.len() - 1) as i64).min(pyround(i as f64 * (BLUES.len() - 1) as f64 / ramp)) as usize;
-        let mut day = BLUES[k];
+        let mut by_day = BLUES[k];
         if let Some(f) = foliage {
             if fol != 0.0 {
                 // far hills darker, near ones bright
-                day = lerp(day, scale(f, 0.6 + 0.4 * fol), fol);
+                by_day = lerp(by_day, scale(f, 0.6 + 0.4 * fol), fol);
             }
         }
-        let mut col = shade_mix(day, NIGHTS[k], light, tw, 0.05 + 0.05 * (i as f64 / ramp));
+        let mut col = shade_mix(by_day, NIGHTS[k], light, tw, 0.05 + 0.05 * (i as f64 / ramp));
+        // by day the far ridges would melt into the pale blue sky behind them, so they sit darker,
+        // the farthest most (the near ones are dark enough already)
+        if fol == 0.0 {
+            col = scale(col, 1.0 - day * (0.4 - 0.2 * (i as f64 / ramp)));
+        }
         // against the bright dusk sky the hills read as dark silhouettes, nearer ones darkest
         let dark = if fol == 0.0 { 0.25 + 0.2 * (i as f64 / ramp) } else { 0.12 };
         col = scale(col, 1.0 - dusk * dark);
