@@ -50,6 +50,9 @@ pub struct DisplayConfig {
     pub pwm_lsb_nanoseconds: u32,
     /// 0 = unlimited; a steady cap can remove flicker caused by rate swings.
     pub limit_refresh_hz: u32,
+    /// 0 = off. 1-99 runs the refresh thread as real-time SCHED_FIFO so network and SD card work on its
+    /// core cannot preempt it (needs the isolcpus setup from setup/02-matrix-setup.sh).
+    pub realtime_priority: u8,
     pub row_address_type: u32,
     pub multiplexing: u32,
     pub rgb_sequence: String,
@@ -72,6 +75,7 @@ impl Default for DisplayConfig {
             pwm_bits: 11,
             pwm_lsb_nanoseconds: 130,
             limit_refresh_hz: 0,
+            realtime_priority: 0,
             row_address_type: 0,
             multiplexing: 0,
             rgb_sequence: "RGB".into(),
@@ -307,10 +311,10 @@ impl<'a> Section<'a> {
     }
 }
 
-const DISPLAY_KEYS: [&str; 16] = [
+const DISPLAY_KEYS: [&str; 17] = [
     "rows", "cols", "chain_length", "parallel", "hardware_mapping", "gpio_slowdown", "pwm_bits",
     "pwm_lsb_nanoseconds", "limit_refresh_hz", "row_address_type", "multiplexing", "rgb_sequence",
-    "brightness", "max_brightness", "scene_fps", "drop_privileges",
+    "brightness", "max_brightness", "scene_fps", "drop_privileges", "realtime_priority",
 ];
 const LOCATION_KEYS: [&str; 5] = ["latitude", "longitude", "postal_code", "label", "units"];
 const WEATHER_KEYS: [&str; 1] = ["refresh_seconds"];
@@ -342,6 +346,7 @@ pub fn build_config(data: &toml::Table, environ: &Env, secrets: &Env) -> Result<
         pwm_bits: s.uint("pwm_bits", defaults.pwm_bits.into())?,
         pwm_lsb_nanoseconds: s.uint("pwm_lsb_nanoseconds", defaults.pwm_lsb_nanoseconds.into())?,
         limit_refresh_hz: s.uint("limit_refresh_hz", defaults.limit_refresh_hz.into())?,
+        realtime_priority: s.uint("realtime_priority", defaults.realtime_priority.into())?,
         row_address_type: s.uint("row_address_type", defaults.row_address_type.into())?,
         multiplexing: s.uint("multiplexing", defaults.multiplexing.into())?,
         rgb_sequence: s.string("rgb_sequence", &defaults.rgb_sequence)?,
@@ -366,6 +371,9 @@ pub fn build_config(data: &toml::Table, environ: &Env, secrets: &Env) -> Result<
             "[display] pwm_bits must be {}-{} (got {})",
             PWM_BITS_RANGE.start(), PWM_BITS_RANGE.end(), d.pwm_bits
         ));
+    }
+    if d.realtime_priority > 99 {
+        return err(format!("[display] realtime_priority must be 0 (off) or 1-99 (got {})", d.realtime_priority));
     }
     // The layout is drawn for exactly one 64x64 picture.
     let (width, height) = (d.cols as u64 * d.chain_length as u64, d.rows as u64 * d.parallel as u64);
@@ -583,6 +591,7 @@ mod tests {
             ("[display]\nscene_fps = 31", "scene_fps"),
             ("[display]\npwm_bits = 0", "pwm_bits"),
             ("[display]\npwm_bits = 12", "pwm_bits"),
+            ("[display]\nrealtime_priority = 100", "realtime_priority"),
             ("[display]\nrows = 32", "rows x parallel"),
             ("[display]\ncols = 32\nchain_length = 1", "cols x chain_length"),
             ("[display]\nparallel = 2", "rows x parallel"),
@@ -596,6 +605,7 @@ mod tests {
             "[display]\nscene_fps = 1",
             "[display]\nscene_fps = 30",
             "[display]\npwm_bits = 1",
+            "[display]\nrealtime_priority = 50",
             "[display]\ncols = 32\nchain_length = 2",
             "[display]\nrows = 32\nparallel = 2",
         ] {

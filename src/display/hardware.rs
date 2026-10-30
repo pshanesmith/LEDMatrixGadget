@@ -81,6 +81,7 @@ pub fn matrix_config(cfg: &DisplayConfig) -> Result<RGBMatrixConfig> {
         led_sequence,
         led_brightness: cfg.brightness.min(cfg.max_brightness),
         drop_privs: cfg.drop_privileges,
+        realtime_priority: (cfg.realtime_priority > 0).then_some(cfg.realtime_priority),
         ..RGBMatrixConfig::default()
     })
 }
@@ -177,6 +178,9 @@ mod tests {
         cfg.rgb_sequence = "rbg".into();
         let m = matrix_config(&cfg).unwrap();
         assert_eq!((m.refresh_rate, m.led_sequence), (150, LedSequence::Rbg));
+        assert_eq!(m.realtime_priority, None);
+        cfg.realtime_priority = 50;
+        assert_eq!(matrix_config(&cfg).unwrap().realtime_priority, Some(50));
     }
 
     #[test]

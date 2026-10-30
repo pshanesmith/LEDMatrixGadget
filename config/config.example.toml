@@ -26,6 +26,7 @@ rgb_sequence = "RGB"
 brightness = 50          # percent; 4 A supply, keep modest
 max_brightness = 70      # hard ceiling; brightness is clamped to this
 scene_fps = 15           # 1-30 frames a second
+# realtime_priority = 50 # 1-99 runs the refresh thread as real-time (stops flicker during network/SD card activity); 0 = off. Needs the isolcpus setup
 drop_privileges = true   # the panel driver drops root after GPIO setup; the service sets MATRIX_DROP_PRIVILEGES=0 if the unprivileged user cannot reach its files
 
 [weather]
