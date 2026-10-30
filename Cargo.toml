@@ -1,6 +1,6 @@
 [package]
 name = "matrix-display"
-version = "0.2.8"
+version = "0.2.9"
 edition = "2021"
 rust-version = "1.85"
 description = "Home status display for a 64x64 RGB LED matrix (date, weather scene, Home Assistant)"
