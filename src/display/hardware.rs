@@ -13,7 +13,7 @@ use crate::gfx::Img;
 
 pub struct HardwareDisplay {
     matrix: RGBMatrix,
-    canvas: Option<Box<Canvas>>,
+    canvas: Option<Canvas>,
     width: usize,
     height: usize,
     brightness: u8,
@@ -80,7 +80,7 @@ pub fn matrix_config(cfg: &DisplayConfig) -> Result<RGBMatrixConfig> {
         multiplexing: multiplexing(cfg.multiplexing)?,
         led_sequence,
         led_brightness: cfg.brightness.min(cfg.max_brightness),
-        drop_privs: cfg.drop_privileges,
+        no_drop_privs: !cfg.drop_privileges,
         realtime_priority: (cfg.realtime_priority > 0).then_some(cfg.realtime_priority),
         ..RGBMatrixConfig::default()
     })
@@ -90,7 +90,7 @@ impl HardwareDisplay {
     /// Starts the panel driver. This is where GPIO is set up and, when configured, root privileges
     /// are dropped, so create it before starting anything that should run unprivileged.
     pub fn new(cfg: &DisplayConfig) -> Result<Self> {
-        let (matrix, canvas) = RGBMatrix::new(matrix_config(cfg)?, 0).map_err(|e| anyhow!("{e}"))?;
+        let (matrix, canvas) = RGBMatrix::new(matrix_config(cfg)?).map_err(|e| anyhow!("{e}"))?;
         Ok(HardwareDisplay {
             matrix,
             width: canvas.width(),
@@ -104,7 +104,7 @@ impl HardwareDisplay {
 
     /// The driver's measured refresh rate (average over the last 60 frames), in Hz.
     pub fn refresh_rate(&self) -> usize {
-        self.matrix.get_framerate()
+        self.matrix.framerate()
     }
 }
 
@@ -124,7 +124,7 @@ impl Display for HardwareDisplay {
         if self.shown_valid && self.shown == image.data {
             return Ok(());
         }
-        let mut canvas = self.canvas.take().expect("canvas is always put back");
+        let mut canvas = self.canvas.take().ok_or_else(|| anyhow!("the panel driver has stopped"))?;
         canvas.set_brightness(self.brightness);
         for y in 0..self.height {
             for x in 0..self.width {
@@ -132,7 +132,7 @@ impl Display for HardwareDisplay {
                 canvas.set_pixel(x, y, r, g, b);
             }
         }
-        self.canvas = Some(self.matrix.update_on_vsync(canvas));
+        self.canvas = Some(self.matrix.update_on_vsync(canvas).map_err(|e| anyhow!("{e}"))?);
         self.shown.clone_from(&image.data);
         self.shown_valid = true;
         Ok(())
@@ -149,7 +149,8 @@ impl Display for HardwareDisplay {
     fn close(&mut self) {
         if let Some(mut canvas) = self.canvas.take() {
             canvas.fill(0, 0, 0);
-            self.canvas = Some(self.matrix.update_on_vsync(canvas));
+            // The driver has already stopped if this fails, and there is nothing left to blank.
+            self.canvas = self.matrix.update_on_vsync(canvas).ok();
         }
         self.shown_valid = false;
     }
@@ -171,7 +172,7 @@ mod tests {
         let mut cfg = DisplayConfig { brightness: 90, ..DisplayConfig::default() }; // above max_brightness (70)
         let m = matrix_config(&cfg).unwrap();
         assert_eq!((m.rows, m.cols, m.pwm_bits, m.pwm_lsb_nanoseconds), (64, 64, 11, 130));
-        assert_eq!((m.slowdown, m.led_brightness, m.refresh_rate, m.drop_privs), (Some(2), 70, 120, true));
+        assert_eq!((m.slowdown, m.led_brightness, m.refresh_rate, m.no_drop_privs), (Some(2), 70, 120, false));
         assert_eq!(m.led_sequence, LedSequence::Rgb);
         assert_eq!(m.hardware_mapping, HardwareMapping::adafruit_hat_pwm());
         cfg.limit_refresh_hz = 150;

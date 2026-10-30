@@ -58,7 +58,7 @@ toml = "0.8"
 ureq = { version = "2", features = ["json"] }
 # Our fork of EmbersArc/rpi_led_panel 0.9.1 (branch review-fixes): the unaligned system timer read that raised SIGBUS on 64-bit Raspberry Pi OS is fixed,
 # along with other bug fixes and upstream ports (Pi 5 support, more panel options). Pinned to the commit.
-rpi-led-panel = { git = "https://github.com/pshanesmith/rpi_led_panel", rev = "1c914c548321e4286973c5fd3d75e25e3611dffe", default-features = false, optional = true }
+rpi-led-panel = { git = "https://github.com/pshanesmith/rpi_led_panel", rev = "333e16e0fc93de4cbd7950ff47ca6f65455624fc", default-features = false, optional = true }
 
 [dev-dependencies]
 tempfile = "3"
