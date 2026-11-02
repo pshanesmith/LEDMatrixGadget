@@ -41,6 +41,7 @@ const GATE_OPEN: [&str; 3] = ["on", "open", "opening"];
 /// can break out of the Jinja string literals.
 const TEMPLATE: &str = "\
 {%- set tier_entity = __TIER__ -%}
+{%- set switch_entity = __SWITCH__ -%}
 {%- set ns = namespace(locks=[], lights=[]) -%}
 {%- set updates = states.update | selectattr('state', 'eq', 'on') | map(attribute='entity_id') | list -%}
 {%- for s in states.lock if s.state != 'locked' -%}
@@ -51,7 +52,8 @@ const TEMPLATE: &str = "\
 {%- endfor -%}
 {{ {\"locks\": ns.locks, \"lights\": ns.lights, \"updates\": updates,
     \"gates\": __GATES__ | map('states') | list,
-    \"tier\": states(tier_entity) if tier_entity else none} | tojson }}";
+    \"tier\": states(tier_entity) if tier_entity else none,
+    \"switch\": states(switch_entity) if switch_entity else none} | tojson }}";
 
 /// Errors never contain the token.
 #[derive(Debug, Clone, PartialEq)]
@@ -76,15 +78,17 @@ fn valid_entity_id(id: &str) -> bool {
     matches!(id.split_once('.'), Some((a, b)) if ok(a) && ok(b))
 }
 
-pub fn build_template(gates: &[String], tier_entity: &str) -> Result<String, String> {
-    for entity in gates.iter().map(String::as_str).chain((!tier_entity.is_empty()).then_some(tier_entity)) {
+pub fn build_template(gates: &[String], tier_entity: &str, switch_entity: &str) -> Result<String, String> {
+    let optional = [tier_entity, switch_entity].into_iter().filter(|e| !e.is_empty());
+    for entity in gates.iter().map(String::as_str).chain(optional) {
         if !valid_entity_id(entity) {
             return Err(format!("invalid entity id: {entity:?}"));
         }
     }
     let gates_json = serde_json::to_string(gates).expect("strings serialise");
     let tier_json = serde_json::to_string(tier_entity).expect("string serialises");
-    Ok(TEMPLATE.replace("__GATES__", &gates_json).replace("__TIER__", &tier_json))
+    let switch_json = serde_json::to_string(switch_entity).expect("string serialises");
+    Ok(TEMPLATE.replace("__GATES__", &gates_json).replace("__TIER__", &tier_json).replace("__SWITCH__", &switch_json))
 }
 
 fn excluded(entity_id: &str, patterns: &[String]) -> bool {
@@ -142,6 +146,9 @@ pub fn parse_template_result(data: &Value, config: &HomeAssistantConfig, now: Op
         None | Some(Value::Null) | Some(Value::String(_)) => "unknown".to_string(),
         Some(other) => other.to_string(),
     });
+    // A missing or odd value counts as on: only an explicit "off" blanks the panel.
+    let display_on = (!config.display_switch_entity.is_empty())
+        .then(|| obj.get("switch").and_then(Value::as_str) != Some("off"));
     Ok(HomeSnapshot {
         fetched_at: now.unwrap_or_else(|| Utc::now().fixed_offset()),
         locks_unlocked,
@@ -150,6 +157,7 @@ pub fn parse_template_result(data: &Value, config: &HomeAssistantConfig, now: Op
         gates_open: gate_ids_where(&GATE_OPEN),
         gates_unavailable: gate_ids_where(&UNAVAILABLE),
         power_tier,
+        display_on,
         updates_pending,
     })
 }
@@ -168,6 +176,7 @@ pub fn snapshot_to_json(s: &HomeSnapshot) -> Value {
         "gates_open": s.gates_open,
         "gates_unavailable": s.gates_unavailable,
         "power_tier": s.power_tier,
+        "display_on": s.display_on,
         "updates_pending": s.updates_pending,
     })
 }
@@ -191,6 +200,7 @@ pub fn snapshot_from_json(data: &Value) -> Result<HomeSnapshot, String> {
         gates_open: list("gates_open")?,
         gates_unavailable: list("gates_unavailable")?,
         power_tier: data.get("power_tier").and_then(Value::as_str).map(String::from),
+        display_on: data.get("display_on").and_then(Value::as_bool),
         updates_pending: data.get("updates_pending").and_then(Value::as_u64).unwrap_or(0) as u32,
     })
 }
@@ -267,7 +277,7 @@ impl HomeAssistantPoller {
     pub fn with_parts(config: HomeAssistantConfig, cache_path: Option<PathBuf>, clock: Box<Clock>,
                       render: Box<Render>) -> Result<Self, String> {
         let url = normalize_url(&config.url).map_err(|e| e.to_string())?;
-        let template = build_template(&config.gates, &config.power_tier_entity)?;
+        let template = build_template(&config.gates, &config.power_tier_entity, &config.display_switch_entity)?;
         let inner = Inner {
             config,
             url,
@@ -552,15 +562,32 @@ mod tests {
 
     #[test]
     fn gates_embedded_and_validated() {
-        let tpl = build_template(&gates(), "").unwrap();
+        let tpl = build_template(&gates(), "", "").unwrap();
         for gate in gates() {
             assert!(tpl.contains(&format!("\"{gate}\"")));
         }
         for bad in ["binary_sensor.x\"] }}{{ 1", "binary_sensor.x'", "nodot", "Light.Upper"] {
-            assert!(build_template(&[bad.to_string()], "").is_err(), "{bad}");
+            assert!(build_template(&[bad.to_string()], "", "").is_err(), "{bad}");
         }
-        assert!(build_template(&[], "sensor.bad tier").is_err());
-        assert!(build_template(&[], "sensor.tier").unwrap().contains("\"sensor.tier\""));
+        assert!(build_template(&[], "sensor.bad tier", "").is_err());
+        assert!(build_template(&[], "sensor.tier", "").unwrap().contains("\"sensor.tier\""));
+        assert!(build_template(&[], "", "input_boolean.bad switch").is_err());
+        assert!(build_template(&[], "", "input_boolean.matrix").unwrap().contains("\"input_boolean.matrix\""));
+    }
+
+    #[test]
+    fn display_switch_is_off_only_when_the_state_says_so() {
+        let mut cfg = make_config("http://x");
+        let with = |switch: Value| json!({"locks": [], "lights": [], "gates": ["off", "off", "off"], "switch": switch});
+        // not configured: always on, whatever the payload holds
+        assert_eq!(parse(&with(json!("off")), &cfg).unwrap().display_on, None);
+        cfg.display_switch_entity = "input_boolean.matrix".into();
+        for (state, on) in [("on", true), ("off", false), ("unavailable", true), ("unknown", true), ("", true)] {
+            assert_eq!(parse(&with(json!(state)), &cfg).unwrap().display_on, Some(on), "{state}");
+        }
+        assert_eq!(parse(&with(Value::Null), &cfg).unwrap().display_on, Some(true));
+        let off = parse(&with(json!("off")), &cfg).unwrap();
+        assert_eq!(snapshot_from_json(&snapshot_to_json(&off)).unwrap().display_on, Some(false));
     }
 
     // -- a tiny fake Home Assistant -------------------------------------------------

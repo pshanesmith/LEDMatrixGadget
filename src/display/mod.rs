@@ -20,7 +20,7 @@ pub trait Display {
     /// Set brightness 1-100 (clamped to the configured max by the caller).
     fn set_brightness(&mut self, percent: u8);
 
-    /// Show a black frame (the sleep window). The backend keeps refreshing the panel; only the picture is dark.
+    /// Show a black frame (the display switch is off). The backend keeps refreshing the panel; only the picture is dark.
     fn blank(&mut self) -> Result<()> {
         self.show(&Img::black(self.width(), self.height()))
     }

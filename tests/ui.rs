@@ -193,10 +193,10 @@ fn configured_but_missing_tier_is_unknown() {
 #[test]
 fn template_names_the_entity_and_rejects_bad_ids() {
     let gates = vec!["cover.gate".to_string()];
-    let template = ha::build_template(&gates, TIER).unwrap();
+    let template = ha::build_template(&gates, TIER, "").unwrap();
     assert!(template.contains(&format!("\"{TIER}\"")) && template.contains("states(tier_entity)"));
-    assert!(ha::build_template(&gates, "").unwrap().contains("set tier_entity = \"\""));
-    assert!(ha::build_template(&[], "sensor.x') }}{{ evil").is_err());
+    assert!(ha::build_template(&gates, "", "").unwrap().contains("set tier_entity = \"\""));
+    assert!(ha::build_template(&[], "sensor.x') }}{{ evil", "").is_err());
 }
 
 #[test]

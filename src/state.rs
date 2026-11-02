@@ -109,6 +109,10 @@ pub struct HomeSnapshot {
     /// "critical_peak"). `None`: not configured, so no bolt is drawn. Anything else the sensor
     /// reports (including "unavailable") is kept and shown as an unknown tier.
     pub power_tier: Option<String>,
+    /// The display switch in Home Assistant: `None` when none is configured (always on), `Some(false)`
+    /// when it is `off`. Any other state, "unavailable" included, counts as on, so a broken switch
+    /// never leaves the panel dark.
+    pub display_on: Option<bool>,
     /// Home Assistant `update.*` entities that are `on` (an update is waiting to be installed).
     pub updates_pending: u32,
 }
@@ -123,6 +127,7 @@ impl HomeSnapshot {
             gates_open: Vec::new(),
             gates_unavailable: Vec::new(),
             power_tier: None,
+            display_on: None,
             updates_pending: 0,
         }
     }
