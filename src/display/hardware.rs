@@ -112,6 +112,17 @@ impl HardwareDisplay {
     }
 }
 
+impl HardwareDisplay {
+    fn draw(&self, canvas: &mut Canvas, image: &Img) {
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let [r, g, b] = image.get(x, y);
+                canvas.set_pixel(x, y, r, g, b);
+            }
+        }
+    }
+}
+
 impl Display for HardwareDisplay {
     fn width(&self) -> usize {
         self.width
@@ -129,18 +140,14 @@ impl Display for HardwareDisplay {
             return Ok(());
         }
         let mut canvas = self.canvas.take().ok_or_else(|| anyhow!("the panel driver has stopped"))?;
+        self.draw(&mut canvas, image);
         if self.canvas_brightness != self.brightness {
-            // The driver applies a new brightness to the canvases it returns from now on, so cycle one
-            // (it shows the previous frame for a moment) to get one drawn at the new level.
+            // The driver applies a new brightness to the canvases it returns from now on (and hands them
+            // back cleared), so show this frame at the old level, then redraw it on a fresh canvas.
             self.matrix.set_brightness(self.brightness);
             canvas = self.matrix.update_on_vsync(canvas).map_err(|e| anyhow!("{e}"))?;
             self.canvas_brightness = self.matrix.brightness();
-        }
-        for y in 0..self.height {
-            for x in 0..self.width {
-                let [r, g, b] = image.get(x, y);
-                canvas.set_pixel(x, y, r, g, b);
-            }
+            self.draw(&mut canvas, image);
         }
         self.canvas = Some(self.matrix.update_on_vsync(canvas).map_err(|e| anyhow!("{e}"))?);
         self.shown.clone_from(&image.data);

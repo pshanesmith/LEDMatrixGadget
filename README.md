@@ -35,7 +35,7 @@ command again to update. Options go after `-s --`, for example `... | sudo bash 
 | Option | Meaning |
 |---|---|
 | `--version TAG` | install that release instead of the latest |
-| `--from-source [--ref NAME]` | clone the repository and compile on the Pi instead (slow; about 1 GB of RAM including swap; installs `git`, `gcc`, `cargo` and `rustc` if missing) |
+| `--from-source [--ref NAME]` | clone the repository and compile on the Pi instead (slow; about 1 GB of RAM including swap; installs `git`, `gcc`, `cargo` and `rustc` if missing; needs Rust 1.88 or newer, which Debian 13's packaged 1.85 is not, so install a newer toolchain with rustup first) |
 | `--no-start`, `--no-drop`, `--yes` | do not start the service; keep running as root; do not ask questions |
 | `--dry-run` | download, verify and unpack, and show what would be installed |
 
