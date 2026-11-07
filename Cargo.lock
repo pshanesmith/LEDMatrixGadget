@@ -676,7 +676,7 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "matrix-display"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -931,7 +931,7 @@ dependencies = [
 [[package]]
 name = "rpi-led-panel"
 version = "0.9.1"
-source = "git+https://github.com/pshanesmith/rpi_led_panel?rev=333e16e0fc93de4cbd7950ff47ca6f65455624fc#333e16e0fc93de4cbd7950ff47ca6f65455624fc"
+source = "git+https://github.com/pshanesmith/rpi_led_panel?rev=12a0746938c3934401640654de654d4e1573373c#12a0746938c3934401640654de654d4e1573373c"
 dependencies = [
  "argh",
  "libc",

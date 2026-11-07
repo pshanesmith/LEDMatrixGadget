@@ -35,7 +35,7 @@ command again to update. Options go after `-s --`, for example `... | sudo bash 
 | Option | Meaning |
 |---|---|
 | `--version TAG` | install that release instead of the latest |
-| `--from-source [--ref NAME]` | clone the repository and compile on the Pi instead (slow; about 1 GB of RAM including swap; installs `git`, `gcc`, `cargo` and `rustc` if missing) |
+| `--from-source [--ref NAME]` | clone the repository and compile on the Pi instead (slow; about 1 GB of RAM including swap; installs `git`, `gcc`, `cargo` and `rustc` if missing; needs Rust 1.88 or newer, which Debian 13's packaged 1.85 is not, so install a newer toolchain with rustup first) |
 | `--no-start`, `--no-drop`, `--yes` | do not start the service; keep running as root; do not ask questions |
 | `--dry-run` | download, verify and unpack, and show what would be installed |
 
@@ -77,12 +77,12 @@ Flicker, wrong colours and other panel problems are covered in [docs/operations.
 
 ## Develop
 
-You need Rust 1.85 or newer. Everything below is for the machine you develop on (a Mac or Linux); the Pi needs none
+You need Rust 1.88 or newer. Everything below is for the machine you develop on (a Mac or Linux); the Pi needs none
 of it when you install a release.
 
 | Needed for | Tool | Install (macOS) |
 |---|---|---|
-| Building, tests, previews, the emulator | Rust 1.85+ (`cargo`, `rustc`, `clippy`) | `brew install rustup && rustup default stable` (or `brew install rust`) |
+| Building, tests, previews, the emulator | Rust 1.88+ (`cargo`, `rustc`, `clippy`) | `brew install rustup && rustup default stable` (or `brew install rust`) |
 | The shell-script tests and `tools/package-release.sh` | `bash`, `tar`, `curl`, and `sha256sum` or `shasum` | already on macOS and Linux |
 | Cross-building for the Pi (`tools/cross-build.sh`) | `zig`, `cargo-zigbuild`, and the Rust target `aarch64-unknown-linux-gnu` (add `aarch64-unknown-linux-musl` for a static build) | `brew install zig cargo-zigbuild`, then `rustup target add aarch64-unknown-linux-gnu` |
 | Publishing a release by hand | GitHub CLI `gh`, logged in | `brew install gh && gh auth login` |

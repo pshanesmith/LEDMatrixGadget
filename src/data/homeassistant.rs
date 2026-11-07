@@ -377,7 +377,7 @@ impl Inner {
                 self.auth_logged.store(false, Ordering::Relaxed);
                 let failures = self.failures.fetch_add(1, Ordering::Relaxed) + 1;
                 // First failure and then every 10th, so a long outage does not spam the log.
-                if failures == 1 || failures % 10 == 0 {
+                if failures == 1 || failures.is_multiple_of(10) {
                     log::warn!("{e} (failure {failures}); keeping last data");
                 }
                 return None;

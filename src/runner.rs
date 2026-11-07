@@ -449,7 +449,7 @@ impl<D: Display> Runner<D> {
                 }
                 Err(_) => {
                     self.failures += 1;
-                    if self.failures == 1 || self.failures % 100 == 0 {
+                    if self.failures == 1 || self.failures.is_multiple_of(100) {
                         log::error!("render failed ({} in a row); showing the last good frame", self.failures);
                     }
                     if self.failures >= MAX_CONSECUTIVE_RENDER_FAILURES {

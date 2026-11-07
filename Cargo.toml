@@ -1,8 +1,8 @@
 [package]
 name = "matrix-display"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.88"
 description = "Home status display for a 64x64 RGB LED matrix (date, weather scene, Home Assistant)"
 license = "GPL-3.0-only"
 default-run = "matrix-display"
@@ -56,9 +56,9 @@ serde_json = "1"
 signal-hook = "0.3"
 toml = "0.8"
 ureq = { version = "2", features = ["json"] }
-# Our fork of EmbersArc/rpi_led_panel 0.9.1 (branch review-fixes): the unaligned system timer read that raised SIGBUS on 64-bit Raspberry Pi OS is fixed,
+# Our fork of EmbersArc/rpi_led_panel 0.9.1 (branch merge-upstream-2026-11, upstream refactors merged): the unaligned system timer read that raised SIGBUS on 64-bit Raspberry Pi OS is fixed,
 # along with other bug fixes and upstream ports (Pi 5 support, more panel options). Pinned to the commit.
-rpi-led-panel = { git = "https://github.com/pshanesmith/rpi_led_panel", rev = "333e16e0fc93de4cbd7950ff47ca6f65455624fc", default-features = false, optional = true }
+rpi-led-panel = { git = "https://github.com/pshanesmith/rpi_led_panel", rev = "12a0746938c3934401640654de654d4e1573373c", default-features = false, optional = true }
 
 [dev-dependencies]
 tempfile = "3"

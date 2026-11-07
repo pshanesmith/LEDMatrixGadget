@@ -17,6 +17,8 @@ pub struct HardwareDisplay {
     width: usize,
     height: usize,
     brightness: u8,
+    /// The brightness the canvas in hand was handed out with (the driver sets it per returned canvas).
+    canvas_brightness: u8,
     /// Pixels of the frame on the panel, when `shown_valid` (the buffer is kept to be reused).
     shown: Vec<Rgb>,
     shown_valid: bool,
@@ -91,12 +93,14 @@ impl HardwareDisplay {
     /// are dropped, so create it before starting anything that should run unprivileged.
     pub fn new(cfg: &DisplayConfig) -> Result<Self> {
         let (matrix, canvas) = RGBMatrix::new(matrix_config(cfg)?).map_err(|e| anyhow!("{e}"))?;
+        let brightness = cfg.brightness.min(cfg.max_brightness);
         Ok(HardwareDisplay {
+            canvas_brightness: matrix.brightness(),
             matrix,
             width: canvas.width(),
             height: canvas.height(),
             canvas: Some(canvas),
-            brightness: cfg.brightness.min(cfg.max_brightness),
+            brightness,
             shown: Vec::new(),
             shown_valid: false,
         })
@@ -105,6 +109,17 @@ impl HardwareDisplay {
     /// The driver's measured refresh rate (average over the last 60 frames), in Hz.
     pub fn refresh_rate(&self) -> usize {
         self.matrix.framerate()
+    }
+}
+
+impl HardwareDisplay {
+    fn draw(&self, canvas: &mut Canvas, image: &Img) {
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let [r, g, b] = image.get(x, y);
+                canvas.set_pixel(x, y, r, g, b);
+            }
+        }
     }
 }
 
@@ -125,12 +140,14 @@ impl Display for HardwareDisplay {
             return Ok(());
         }
         let mut canvas = self.canvas.take().ok_or_else(|| anyhow!("the panel driver has stopped"))?;
-        canvas.set_brightness(self.brightness);
-        for y in 0..self.height {
-            for x in 0..self.width {
-                let [r, g, b] = image.get(x, y);
-                canvas.set_pixel(x, y, r, g, b);
-            }
+        self.draw(&mut canvas, image);
+        if self.canvas_brightness != self.brightness {
+            // The driver applies a new brightness to the canvases it returns from now on (and hands them
+            // back cleared), so show this frame at the old level, then redraw it on a fresh canvas.
+            self.matrix.set_brightness(self.brightness);
+            canvas = self.matrix.update_on_vsync(canvas).map_err(|e| anyhow!("{e}"))?;
+            self.canvas_brightness = self.matrix.brightness();
+            self.draw(&mut canvas, image);
         }
         self.canvas = Some(self.matrix.update_on_vsync(canvas).map_err(|e| anyhow!("{e}"))?);
         self.shown.clone_from(&image.data);
