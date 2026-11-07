@@ -30,7 +30,7 @@ source "$HERE/lib/common.sh"
 BOOT_DIR=${BOOT_DIR:-/boot/firmware}
 ISOLCPUS=1; REBUILD=0; ASSUME_YES=0; ONLY=""; SKIP=""; BUILD=0
 # gcc is the linker rustc calls and compiles the TLS library's C parts (no g++ or make: the panel driver is
-# pure Rust); cargo and rustc come from Debian (Rust 1.85 on Debian 13, the minimum the project needs).
+# pure Rust); cargo and rustc come from Debian (Debian 13 has Rust 1.85, older than the 1.88 the project now needs: a source build on the Pi needs rustup).
 DEPS=(gcc libc6-dev cargo rustc)
 # hzeller's recommendation for reserving core 3 for the refresh thread.
 CMDLINE_TOKENS=("isolcpus=domain,managed_irq,3" "nohz_full=3" "rcu_nocbs=3" "irqaffinity=0,1,2")

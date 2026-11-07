@@ -3,7 +3,7 @@
 64x64 RGB LED matrix status display (Raspberry Pi Zero 2 W), written in Rust. See README.md, DESIGN.md, docs/operations.md.
 
 ## Workflow: develop on the Mac, test on the Pi
-- Develop locally with Rust 1.85 or newer (`brew install rustup` and `rustup default stable`, or `brew install rust`). With a rustup toolchain that is not linked into the PATH, use `~/.rustup/toolchains/stable-*/bin`.
+- Develop locally with Rust 1.88 or newer (`brew install rustup` and `rustup default stable`, or `brew install rust`). With a rustup toolchain that is not linked into the PATH, use `~/.rustup/toolchains/stable-*/bin`.
 - Verify with `cargo test` and the emulator: `cargo run --bin matrix-preview -- --sample <name> --out x.png` or `cargo run -- --emulate --offline --sample <name> --seconds 4 --out x.png|gif`. No panel is needed; the default build has no panel driver.
 - The panel backend (`--features hardware`, crate `rpi-led-panel`) is Linux-only and does not compile on a Mac. Build it with `tools/cross-build.sh --target aarch64-unknown-linux-musl` (needs `zig`, `cargo-zigbuild`; the musl target is a static binary, the default glibc one needs `rustup target add aarch64-unknown-linux-gnu`), and compile its tests with `cargo zigbuild --lib --tests --features hardware --target aarch64-unknown-linux-musl`. They cannot run off the Pi.
 - Rendering is checked against golden images in `tests/golden/`. A deliberate rendering change must update them (then review the PNGs): `UPDATE_GOLDEN=1 cargo test --test ui` for the widget screens (made by the original Python version, which has no randomness), `UPDATE_GOLDEN=1 cargo test --test scene` for the scene (`scene-cases.json` lists the cases). The seeded shapes use `rand_chacha`, so a `rand` upgrade can change them.
