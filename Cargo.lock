@@ -931,7 +931,7 @@ dependencies = [
 [[package]]
 name = "rpi-led-panel"
 version = "0.9.1"
-source = "git+https://github.com/pshanesmith/rpi_led_panel?rev=12a0746938c3934401640654de654d4e1573373c#12a0746938c3934401640654de654d4e1573373c"
+source = "git+https://github.com/pshanesmith/rpi_led_panel?rev=3ba99776df255a46b1c49d65ec232cd5eb9e4f78#3ba99776df255a46b1c49d65ec232cd5eb9e4f78"
 dependencies = [
  "argh",
  "libc",
