@@ -37,6 +37,8 @@ refresh_seconds = 900    # at least 60
 url = "http://homeassistant:8123"
 poll_seconds = 15        # at least 5
 gates = []
+# fnmatch globs on entity ids, e.g. ["lock.*pawport"]. Home Assistant can add an area prefix to
+# ids (lock.pawport -> lock.entertainment_room_pawport), so prefer globs over exact ids.
 exclude_locks = []
 # fnmatch globs on entity ids
 exclude_lights = ["light.*_rgb_indicator", "light.*_ap_led", "light.*_led"]
